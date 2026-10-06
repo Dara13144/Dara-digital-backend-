@@ -17,7 +17,7 @@ export const userController = {
       }
 
       const wallet = await walletRepo.getOrCreateWallet(user.id);
-      return successResponse(res, { ...user, wallet_balance: wallet.balance }, 'Profile retrieved');
+      return successResponse(res, { ...user, balance: Number(wallet.balance), wallet_balance: Number(wallet.balance) }, 'Profile retrieved');
     } catch (err) {
       return errorResponse(res, ERROR_CODES.INTERNAL_SERVER_ERROR, err.message, 500);
     }
