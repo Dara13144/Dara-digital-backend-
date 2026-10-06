@@ -88,7 +88,9 @@ export const orderService = {
    */
   async checkoutOrder({ userId, items, couponCode = null, paymentMethod = 'aba_payway', customerNotes = null }) {
     const settings = await adminRepo.getSettings();
-    const minAmount = Number(settings.min_order_amount || 1.00);
+    const minAmount = settings.min_order_amount !== undefined && settings.min_order_amount !== null
+      ? Number(settings.min_order_amount)
+      : 0.01;
     const maxAmount = Number(settings.max_order_amount || 2000.00);
 
     const calculated = await this.calculateCart(items, couponCode, userId);

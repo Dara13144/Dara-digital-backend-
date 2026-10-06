@@ -1,6 +1,8 @@
 import { v4 as uuidv4 } from 'uuid';
 import { memoryStore } from './storeMemory.js';
 import { ORDER_STATUS, PAYMENT_STATUS, STOCK_STATUS } from '../constants/states.js';
+import { dbPool } from '../config/db.js';
+import { logger } from '../config/logger.js';
 
 export const adminRepo = {
   /**
@@ -116,11 +118,35 @@ export const adminRepo = {
   },
 
   async getSettings() {
+    if (dbPool) {
+      try {
+        const { rows } = await dbPool.query('SELECT key, value FROM settings');
+        for (const row of rows) {
+          memoryStore.settings[row.key] = row.value;
+        }
+      } catch (err) {
+        logger.warn('Failed to load settings from dbPool:', err.message);
+      }
+    }
     return memoryStore.settings;
   },
 
   async updateSettings(newSettings, adminId, req) {
     Object.assign(memoryStore.settings, newSettings);
+    if (dbPool) {
+      try {
+        for (const [key, val] of Object.entries(newSettings)) {
+          await dbPool.query(
+            `INSERT INTO settings (key, value, description)
+             VALUES ($1, $2::jsonb, $3)
+             ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+            [key, JSON.stringify(val), `Setting for ${key}`]
+          );
+        }
+      } catch (err) {
+        logger.error('Failed to persist settings to PostgreSQL:', err.message);
+      }
+    }
     await this.logAdminAction({
       adminId,
       action: 'UPDATE_SETTINGS',

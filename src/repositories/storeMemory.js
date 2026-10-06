@@ -395,7 +395,7 @@ export const memoryStore = {
     support_telegram: '@DaraDigital_bot',
     maintenance_mode: false,
     low_stock_threshold: 3,
-    min_order_amount: 1.00,
+    min_order_amount: 0.01,
     max_order_amount: 2000.00
   }
 };

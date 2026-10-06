@@ -47,6 +47,7 @@ router.get('/', (req, res) => {
   });
 });
 router.get('/health', healthController.getHealth);
+router.get('/settings', adminController.getSettings);
 router.post('/telegram/webhook', async (req, res) => {
   try {
     await handleTelegramWebhook(req.body);
