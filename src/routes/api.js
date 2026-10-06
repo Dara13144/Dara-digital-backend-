@@ -81,8 +81,8 @@ router.get('/categories/:slug', categoryController.getCategoryBySlug);
 // 5. Products Catalog (Never exposes secret stock payload)
 // ============================================================================
 router.get('/products', productController.getProducts);
-router.get('/products/:id', productController.getProductById);
 router.get('/products/slug/:slug', productController.getProductBySlug);
+router.get('/products/:id', productController.getProductById);
 
 // ============================================================================
 // 6. Shopping Cart & Coupons

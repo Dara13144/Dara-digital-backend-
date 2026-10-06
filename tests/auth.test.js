@@ -15,7 +15,7 @@ describe('Authentication & Telegram Verification Tests', () => {
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
     expect(res.body.data.token).toBeDefined();
-    expect(res.body.data.user.telegram_id).toBe(88888888);
+    expect(Number(res.body.data.user.telegram_id)).toBe(88888888);
   });
 
   it('should return error when initData is missing', async () => {

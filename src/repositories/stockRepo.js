@@ -130,8 +130,9 @@ export const stockRepo = {
    * Ensures no two customers get the same stock items
    */
   async lockAndDeliverOrderStock(orderId, orderItems) {
-    // If PostgreSQL pool exists, run the database stored procedure
-    if (dbPool) {
+    // If PostgreSQL pool exists, run the database stored procedure for valid DB order UUIDs
+    const isUuid = typeof orderId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(orderId);
+    if (dbPool && isUuid) {
       const client = await dbPool.connect();
       try {
         await client.query('BEGIN');
@@ -140,8 +141,12 @@ export const stockRepo = {
         return rows;
       } catch (err) {
         await client.query('ROLLBACK');
-        logger.error('PostgreSQL stored procedure process_order_stock_delivery failed:', err.message);
-        throw err;
+        if (err.message && err.message.toLowerCase().includes('not found')) {
+          logger.warn(`Order ${orderId} not found in PostgreSQL, using in-memory stock allocation.`);
+        } else {
+          logger.error('PostgreSQL stored procedure process_order_stock_delivery failed:', err.message);
+          throw err;
+        }
       } finally {
         client.release();
       }

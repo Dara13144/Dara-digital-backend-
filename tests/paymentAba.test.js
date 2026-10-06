@@ -30,7 +30,7 @@ describe('ABA PayWay Integration & Payment State Machine Tests', () => {
       .send({
         items: [
           {
-            productId: '20000000-0000-0000-0000-000000000003', // Windows 11 Key
+            productId: '20000000-0000-0000-0000-000000000005', // Canva Pro Key
             quantity: 1
           }
         ],

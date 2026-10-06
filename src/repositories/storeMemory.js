@@ -80,8 +80,98 @@ export const memoryStore = {
     }
   ],
   products: [
-
-
+    {
+      id: '20000000-0000-0000-0000-000000000001',
+      category_id: '10000000-0000-0000-0000-000000000001',
+      name: 'Cyberpunk 2077: Phantom Liberty (Steam Key)',
+      name_km: 'Cyberpunk 2077: Phantom Liberty (Steam Key)',
+      slug: 'cyberpunk-2077-phantom-liberty-steam',
+      description: 'Original Steam CD-Key for Cyberpunk 2077 Phantom Liberty Expansion. Global activation with instant delivery.',
+      description_km: 'កូដហ្គេម Cyberpunk 2077 Phantom Liberty លើ Steam ពិតប្រាកដ ១០០% ផ្ដល់ជូនភ្លាមៗ។',
+      images: ['https://images.unsplash.com/photo-1550745165-9bc0b252726f?w=600&auto=format&fit=crop&q=80'],
+      price: 29.99,
+      discount_price: 24.50,
+      currency: 'USD',
+      stock_type: 'code',
+      stock_quantity: 3,
+      sold_quantity: 112,
+      status: 'published',
+      featured: true,
+      published: true,
+      rating: 4.95,
+      instructions: '1. Launch Steam client.\n2. Click Games > Activate a Product on Steam.\n3. Enter the provided key.',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    },
+    {
+      id: '20000000-0000-0000-0000-000000000002',
+      category_id: '10000000-0000-0000-0000-000000000002',
+      name: 'Apple Gift Card $10 (US Region)',
+      name_km: 'កាតកាដូ Apple $10 (សហរដ្ឋអាមេរិក)',
+      slug: 'apple-gift-card-10-us',
+      description: 'Digital Apple Gift Card $10 USD for App Store, iTunes, and iCloud subscriptions on US accounts.',
+      description_km: 'កាត App Store & iTunes $10 USD សម្រាប់គណនីសហរដ្ឋអាមេរិក ប្រើទិញ App និង Subscriptions។',
+      images: ['https://images.unsplash.com/photo-1549465220-1a8b9238cd48?w=600&auto=format&fit=crop&q=80'],
+      price: 10.50,
+      discount_price: 9.90,
+      currency: 'USD',
+      stock_type: 'code',
+      stock_quantity: 4,
+      sold_quantity: 42,
+      status: 'published',
+      featured: true,
+      published: true,
+      rating: 5.00,
+      instructions: '1. Open App Store.\n2. Tap your profile icon.\n3. Tap "Redeem Gift Card or Code" and enter your code.',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    },
+    {
+      id: '20000000-0000-0000-0000-000000000003',
+      category_id: '10000000-0000-0000-0000-000000000003',
+      name: 'Windows 11 Professional OEM Key (1 PC)',
+      name_km: 'Windows 11 Pro OEM Key (1 PC)',
+      slug: 'windows-11-pro-oem-key',
+      description: 'Lifetime genuine activation key for Windows 11 Professional 64/32 Bit for 1 PC.',
+      description_km: 'កូដកម្មវិធី Windows 11 Pro ពិតប្រាកដ ប្រើបានមួយជីវិតសម្រាប់កុំព្យូទ័រ ១ គ្រឿង។',
+      images: ['https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=600&auto=format&fit=crop&q=80'],
+      price: 12.00,
+      discount_price: 7.50,
+      currency: 'USD',
+      stock_type: 'code',
+      stock_quantity: 5,
+      sold_quantity: 128,
+      status: 'published',
+      featured: true,
+      published: true,
+      rating: 4.98,
+      instructions: '1. Go to Settings > System > Activation.\n2. Click "Change product key" and paste the key.',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    },
+    {
+      id: '20000000-0000-0000-0000-000000000004',
+      category_id: '10000000-0000-0000-0000-000000000005',
+      name: 'Telegram Premium 3 Months Gift Code',
+      name_km: 'Telegram Premium 3 ខែ (Gift Code)',
+      slug: 'telegram-premium-3-months',
+      description: 'Instant Telegram Premium 3-Month activation link/code. 4GB uploads, fast downloads, exclusive badges.',
+      description_km: 'តេលេក្រាមពិសេស ៣ ខែ ផ្ដល់ជូនល្បឿនទាញយកលឿន និងរូបសញ្ញាផ្តាច់មុខ។',
+      images: ['https://images.unsplash.com/photo-1614680376593-902f749f7ffc?w=600&auto=format&fit=crop&q=80'],
+      price: 11.99,
+      discount_price: 9.99,
+      currency: 'USD',
+      stock_type: 'link',
+      stock_quantity: 3,
+      sold_quantity: 96,
+      status: 'published',
+      featured: true,
+      published: true,
+      rating: 4.99,
+      instructions: 'Open the delivered https://t.me/giftcode/... link directly on Telegram to activate.',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    },
     {
       id: '20000000-0000-0000-0000-000000000005',
       category_id: '10000000-0000-0000-0000-000000000004',
@@ -199,9 +289,28 @@ export const memoryStore = {
     }
   ],
   stock_items: [
+    // Cyberpunk 2077
+    { id: 's1', product_id: '20000000-0000-0000-0000-000000000001', stock_type: 'code', payload: 'STEAM-CP77-A1B2-C3D4-E5F6', stock_hash: sha256('STEAM-CP77-A1B2-C3D4-E5F6'), status: 'available', created_at: new Date().toISOString() },
+    { id: 's2', product_id: '20000000-0000-0000-0000-000000000001', stock_type: 'code', payload: 'STEAM-CP77-G7H8-I9J0-K1L2', stock_hash: sha256('STEAM-CP77-G7H8-I9J0-K1L2'), status: 'available', created_at: new Date().toISOString() },
+    { id: 's3', product_id: '20000000-0000-0000-0000-000000000001', stock_type: 'code', payload: 'STEAM-CP77-M3N4-O5P6-Q7R8', stock_hash: sha256('STEAM-CP77-M3N4-O5P6-Q7R8'), status: 'available', created_at: new Date().toISOString() },
 
+    // Apple Gift Card
+    { id: 's4', product_id: '20000000-0000-0000-0000-000000000002', stock_type: 'code', payload: 'XAPL-9988-7766-5544-3322', stock_hash: sha256('XAPL-9988-7766-5544-3322'), status: 'available', created_at: new Date().toISOString() },
+    { id: 's5', product_id: '20000000-0000-0000-0000-000000000002', stock_type: 'code', payload: 'XAPL-1122-3344-5566-7788', stock_hash: sha256('XAPL-1122-3344-5566-7788'), status: 'available', created_at: new Date().toISOString() },
+    { id: 's6', product_id: '20000000-0000-0000-0000-000000000002', stock_type: 'code', payload: 'XAPL-4455-6677-8899-0011', stock_hash: sha256('XAPL-4455-6677-8899-0011'), status: 'available', created_at: new Date().toISOString() },
+    { id: 's7', product_id: '20000000-0000-0000-0000-000000000002', stock_type: 'code', payload: 'XAPL-5566-7788-9900-1122', stock_hash: sha256('XAPL-5566-7788-9900-1122'), status: 'available', created_at: new Date().toISOString() },
 
+    // Windows 11 Pro OEM
+    { id: 's8', product_id: '20000000-0000-0000-0000-000000000003', stock_type: 'code', payload: 'VK7JG-NPHTM-C97JM-9MPGT-3V66T', stock_hash: sha256('VK7JG-NPHTM-C97JM-9MPGT-3V66T'), status: 'available', created_at: new Date().toISOString() },
+    { id: 's9', product_id: '20000000-0000-0000-0000-000000000003', stock_type: 'code', payload: 'W269N-WFGWX-YVC9B-4J6C9-T83GX', stock_hash: sha256('W269N-WFGWX-YVC9B-4J6C9-T83GX'), status: 'available', created_at: new Date().toISOString() },
+    { id: 's10', product_id: '20000000-0000-0000-0000-000000000003', stock_type: 'code', payload: 'MH37W-N47XK-V7XM9-C7227-GCQG9', stock_hash: sha256('MH37W-N47XK-V7XM9-C7227-GCQG9'), status: 'available', created_at: new Date().toISOString() },
+    { id: 's11', product_id: '20000000-0000-0000-0000-000000000003', stock_type: 'code', payload: 'NRG8B-VKK3Q-CXVCJ-9G2XF-6Q84J', stock_hash: sha256('NRG8B-VKK3Q-CXVCJ-9G2XF-6Q84J'), status: 'available', created_at: new Date().toISOString() },
+    { id: 's12', product_id: '20000000-0000-0000-0000-000000000003', stock_type: 'code', payload: '9F2HK-N7836-K9P86-HM388-29HCT', stock_hash: sha256('9F2HK-N7836-K9P86-HM388-29HCT'), status: 'available', created_at: new Date().toISOString() },
 
+    // Telegram Premium Links
+    { id: 's13', product_id: '20000000-0000-0000-0000-000000000004', stock_type: 'link', payload: 'https://t.me/giftcode/TG-PREM-3M-A7B8C9D0', stock_hash: sha256('https://t.me/giftcode/TG-PREM-3M-A7B8C9D0'), status: 'available', created_at: new Date().toISOString() },
+    { id: 's14', product_id: '20000000-0000-0000-0000-000000000004', stock_type: 'link', payload: 'https://t.me/giftcode/TG-PREM-3M-E1F2G3H4', stock_hash: sha256('https://t.me/giftcode/TG-PREM-3M-E1F2G3H4'), status: 'available', created_at: new Date().toISOString() },
+    { id: 's15', product_id: '20000000-0000-0000-0000-000000000004', stock_type: 'link', payload: 'https://t.me/giftcode/TG-PREM-3M-I5J6K7L8', stock_hash: sha256('https://t.me/giftcode/TG-PREM-3M-I5J6K7L8'), status: 'available', created_at: new Date().toISOString() },
 
     // Canva Pro
     { id: 's16', product_id: '20000000-0000-0000-0000-000000000005', stock_type: 'link', payload: 'https://www.canva.com/brand/join?token=cnv_invite_771a2b', stock_hash: sha256('https://www.canva.com/brand/join?token=cnv_invite_771a2b'), status: 'available', created_at: new Date().toISOString() },
