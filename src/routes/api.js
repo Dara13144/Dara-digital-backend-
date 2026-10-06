@@ -30,6 +30,22 @@ const router = express.Router();
 // ============================================================================
 // 1. Health & Telegram Webhook
 // ============================================================================
+router.get('/', (req, res) => {
+  res.json({
+    success: true,
+    service: 'daramini-api',
+    version: '1.0.0',
+    status: 'online',
+    timestamp: new Date().toISOString(),
+    endpoints: {
+      health: '/api/health',
+      categories: '/api/categories',
+      products: '/api/products',
+      orders: '/api/orders',
+      wallet: '/api/wallet'
+    }
+  });
+});
 router.get('/health', healthController.getHealth);
 router.post('/telegram/webhook', async (req, res) => {
   try {
