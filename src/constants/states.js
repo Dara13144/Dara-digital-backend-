@@ -1,0 +1,78 @@
+export const ORDER_STATUS = {
+  PENDING_PAYMENT: 'PENDING_PAYMENT',
+  PAYMENT_PROCESSING: 'PAYMENT_PROCESSING',
+  PAID: 'PAID',
+  STOCK_RESERVED: 'STOCK_RESERVED',
+  DELIVERING: 'DELIVERING',
+  COMPLETED: 'COMPLETED',
+  FAILED: 'FAILED',
+  CANCELLED: 'CANCELLED',
+  REFUND_PENDING: 'REFUND_PENDING',
+  REFUNDED: 'REFUNDED',
+  STOCK_ERROR: 'STOCK_ERROR'
+};
+
+export const PAYMENT_STATUS = {
+  PENDING: 'PENDING',
+  PROCESSING: 'PROCESSING',
+  PAID: 'PAID',
+  FAILED: 'FAILED',
+  CANCELLED: 'CANCELLED',
+  EXPIRED: 'EXPIRED',
+  REFUNDED: 'REFUNDED'
+};
+
+export const STOCK_STATUS = {
+  AVAILABLE: 'available',
+  RESERVED: 'reserved',
+  SOLD: 'sold',
+  DISABLED: 'disabled'
+};
+
+export const STOCK_TYPE = {
+  MANUAL: 'manual',
+  CODE: 'code',
+  ACCOUNT: 'account',
+  FILE: 'file',
+  LINK: 'link',
+  TEXT: 'text'
+};
+
+export const WALLET_TX_TYPE = {
+  DEPOSIT: 'DEPOSIT',
+  PURCHASE: 'PURCHASE',
+  REFUND: 'REFUND',
+  ADMIN_CREDIT: 'ADMIN_CREDIT',
+  ADMIN_DEBIT: 'ADMIN_DEBIT'
+};
+
+export const DISCOUNT_TYPE = {
+  PERCENTAGE: 'percentage',
+  FIXED: 'fixed'
+};
+
+// Valid state transitions map for payment state machine
+export const VALID_PAYMENT_TRANSITIONS = {
+  PENDING: ['PROCESSING', 'CANCELLED', 'EXPIRED'],
+  PROCESSING: ['PAID', 'FAILED', 'CANCELLED'],
+  PAID: ['REFUNDED'],
+  FAILED: [], // Never allowed to transition to PAID directly without explicit reconciliation
+  CANCELLED: [],
+  EXPIRED: [],
+  REFUNDED: []
+};
+
+// Valid state transitions map for order state machine
+export const VALID_ORDER_TRANSITIONS = {
+  PENDING_PAYMENT: ['PAYMENT_PROCESSING', 'CANCELLED', 'FAILED'],
+  PAYMENT_PROCESSING: ['PAID', 'FAILED', 'CANCELLED'],
+  PAID: ['STOCK_RESERVED', 'DELIVERING', 'COMPLETED', 'STOCK_ERROR', 'REFUND_PENDING'],
+  STOCK_RESERVED: ['DELIVERING', 'COMPLETED', 'STOCK_ERROR'],
+  DELIVERING: ['COMPLETED', 'STOCK_ERROR'],
+  COMPLETED: ['REFUND_PENDING', 'REFUNDED'],
+  STOCK_ERROR: ['COMPLETED', 'REFUND_PENDING', 'REFUNDED', 'CANCELLED'],
+  FAILED: [],
+  CANCELLED: [],
+  REFUND_PENDING: ['REFUNDED', 'COMPLETED'],
+  REFUNDED: []
+};
