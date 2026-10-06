@@ -2,15 +2,26 @@ import { v4 as uuidv4 } from 'uuid';
 import { memoryStore } from './storeMemory.js';
 import { sha256 } from '../utils/crypto.js';
 import { STOCK_STATUS } from '../constants/states.js';
-import { supabaseAdmin, dbPool } from '../config/db.js';
+import { dbPool } from '../config/db.js';
 import { logger } from '../config/logger.js';
-import { ENV } from '../config/env.js';
 
 export const stockRepo = {
   /**
    * Get available stock count for a given product
    */
   async getAvailableCount(productId) {
+    if (dbPool) {
+      try {
+        const { rows } = await dbPool.query(
+          "SELECT count(*)::int as count FROM stock_items WHERE product_id = $1 AND status = 'available'",
+          [productId]
+        );
+        return rows[0]?.count ?? 0;
+      } catch (err) {
+        logger.debug('dbPool getAvailableCount error, falling back:', err.message);
+      }
+    }
+
     return memoryStore.stock_items.filter(
       (s) => s.product_id === productId && s.status === STOCK_STATUS.AVAILABLE
     ).length;
@@ -20,6 +31,31 @@ export const stockRepo = {
    * Admin: List stock items with pagination & status filters
    */
   async getStockItemsByProduct(productId, { status, page = 1, limit = 50 } = {}) {
+    if (dbPool) {
+      try {
+        let query = 'SELECT * FROM stock_items WHERE product_id = $1';
+        const params = [productId];
+
+        if (status) {
+          params.push(status);
+          query += ` AND status = $${params.length}`;
+        }
+
+        const countQuery = `SELECT count(*)::int as count FROM (${query}) as count_tbl`;
+        const countRes = await dbPool.query(countQuery, params);
+        const total = countRes.rows[0]?.count || 0;
+
+        const offset = (page - 1) * limit;
+        params.push(limit, offset);
+        query += ` ORDER BY created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`;
+
+        const { rows } = await dbPool.query(query, params);
+        return { items: rows, total, page, limit };
+      } catch (err) {
+        logger.debug('dbPool getStockItemsByProduct error, falling back:', err.message);
+      }
+    }
+
     let list = memoryStore.stock_items.filter((s) => s.product_id === productId);
     if (status) {
       list = list.filter((s) => s.status === status);
@@ -39,7 +75,38 @@ export const stockRepo = {
     }
     const stockHash = sha256(cleanPayload);
 
-    // Duplicate check
+    if (dbPool) {
+      try {
+        const check = await dbPool.query(
+          'SELECT id FROM stock_items WHERE product_id = $1 AND stock_hash = $2 LIMIT 1',
+          [productId, stockHash]
+        );
+        if (check.rows.length > 0) {
+          throw new Error('DUPLICATE_STOCK_HASH: This stock item has already been added to this product.');
+        }
+
+        const stockId = uuidv4();
+        const { rows } = await dbPool.query(
+          `INSERT INTO stock_items (id, product_id, stock_type, payload, stock_hash, status)
+           VALUES ($1, $2, $3, $4, $5, 'available')
+           RETURNING *`,
+          [stockId, productId, stockType, cleanPayload, stockHash]
+        );
+
+        if (rows.length > 0) {
+          const item = rows[0];
+          memoryStore.stock_items.push(item);
+          return item;
+        }
+      } catch (err) {
+        if (err.message.includes('DUPLICATE_STOCK_HASH') || err.message.includes('unique_product_stock_hash')) {
+          throw new Error('DUPLICATE_STOCK_HASH: This stock item has already been added to this product.');
+        }
+        logger.warn('dbPool addStockItem error, falling back to memory:', err.message);
+      }
+    }
+
+    // Duplicate check in memory
     const duplicate = memoryStore.stock_items.find(
       (s) => s.product_id === productId && s.stock_hash === stockHash
     );
@@ -72,6 +139,42 @@ export const stockRepo = {
       duplicates: 0,
       errors: []
     };
+
+    if (dbPool) {
+      try {
+        const { rows: existingRows } = await dbPool.query(
+          'SELECT stock_hash FROM stock_items WHERE product_id = $1',
+          [productId]
+        );
+        const existingHashes = new Set(existingRows.map((r) => r.stock_hash));
+
+        for (const rawLine of lines) {
+          const line = String(rawLine).trim();
+          if (!line) continue;
+
+          const stockHash = sha256(line);
+          if (existingHashes.has(stockHash)) {
+            results.duplicates += 1;
+            continue;
+          }
+
+          existingHashes.add(stockHash);
+          const stockId = uuidv4();
+          await dbPool.query(
+            `INSERT INTO stock_items (id, product_id, stock_type, payload, stock_hash, status)
+             VALUES ($1, $2, $3, $4, $5, 'available')
+             ON CONFLICT (product_id, stock_hash) DO NOTHING`,
+            [stockId, productId, stockType, line, stockHash]
+          );
+
+          results.inserted += 1;
+        }
+
+        return results;
+      } catch (err) {
+        logger.warn('dbPool bulkAddStock error, falling back to memory:', err.message);
+      }
+    }
 
     const existingHashes = new Set(
       memoryStore.stock_items
@@ -115,6 +218,23 @@ export const stockRepo = {
    * Delete or disable unsold stock item
    */
   async deleteStockItem(id) {
+    if (dbPool) {
+      try {
+        const check = await dbPool.query('SELECT status FROM stock_items WHERE id = $1', [id]);
+        if (check.rows.length > 0 && check.rows[0].status === 'sold') {
+          throw new Error('Cannot delete already sold stock item');
+        }
+
+        const res = await dbPool.query('DELETE FROM stock_items WHERE id = $1 AND status != \'sold\'', [id]);
+        const index = memoryStore.stock_items.findIndex((s) => s.id === id);
+        if (index !== -1) memoryStore.stock_items.splice(index, 1);
+        return res.rowCount > 0;
+      } catch (err) {
+        if (err.message.includes('sold')) throw err;
+        logger.warn('dbPool deleteStockItem error, falling back:', err.message);
+      }
+    }
+
     const index = memoryStore.stock_items.findIndex((s) => s.id === id);
     if (index === -1) return false;
     const item = memoryStore.stock_items[index];
@@ -152,7 +272,7 @@ export const stockRepo = {
       }
     }
 
-    // Atomic memory lock
+    // Atomic memory lock fallback
     const createdDeliveries = [];
     const stockToUpdate = [];
 

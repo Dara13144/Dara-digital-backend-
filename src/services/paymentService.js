@@ -6,9 +6,13 @@ import { userRepo } from '../repositories/userRepo.js';
 import { couponRepo } from '../repositories/couponRepo.js';
 import { abaClient } from '../integrations/aba/paywayClient.js';
 import { cutluyClient } from '../integrations/cutluy/cutluyClient.js';
-import { notifyOrderDelivered, notifyPaymentFailed, notifyBalanceTopUp, notifyAdmin } from '../integrations/telegram/notifier.js';
+import { notifyOrderDelivered, notifyPaymentFailed, notifyBalanceTopUp, notifyAdmin, notifyPaymentCompleted, notifyWalletTopUpCompleted } from '../integrations/telegram/notifier.js';
 import { ORDER_STATUS, PAYMENT_STATUS, WALLET_TX_TYPE } from '../constants/states.js';
 import { logger } from '../config/logger.js';
+
+// Concurrency mutex lock to prevent simultaneous duplicate fulfillments
+const activeOrderFulfillments = new Set();
+const activeWalletFulfillments = new Set();
 
 export const paymentService = {
   /**
@@ -107,11 +111,12 @@ export const paymentService = {
       currency: order.currency || 'USD'
     });
 
-    payment.cutluy_payment_id = cutluyRes.id;
-    payment.qr_string = cutluyRes.qr_string;
-    payment.checkout_url = cutluyRes.checkout_url;
-    payment.expires_at = cutluyRes.expires_at;
-    payment.updated_at = new Date().toISOString();
+    await paymentRepo.attachCutLuyDetails(payment.id, {
+      cutluyPaymentId: cutluyRes.id,
+      qrString: cutluyRes.qr_string,
+      checkoutUrl: cutluyRes.checkout_url,
+      expiresAt: cutluyRes.expires_at
+    });
 
     // Mark order as processing
     await orderRepo.updateOrderStatus(order.id, ORDER_STATUS.PAYMENT_PROCESSING);
@@ -163,11 +168,12 @@ export const paymentService = {
       currency: 'USD'
     });
 
-    payment.cutluy_payment_id = cutluyRes.id;
-    payment.qr_string = cutluyRes.qr_string;
-    payment.checkout_url = cutluyRes.checkout_url;
-    payment.expires_at = cutluyRes.expires_at;
-    payment.updated_at = new Date().toISOString();
+    await paymentRepo.attachCutLuyDetails(payment.id, {
+      cutluyPaymentId: cutluyRes.id,
+      qrString: cutluyRes.qr_string,
+      checkoutUrl: cutluyRes.checkout_url,
+      expiresAt: cutluyRes.expires_at
+    });
 
     return {
       paymentId: payment.id,
@@ -193,39 +199,46 @@ export const paymentService = {
       throw new Error(`Payment ${paymentId} not found for wallet top-up.`);
     }
 
-    const user = await userRepo.findById(payment.user_id);
-    if (!user) {
-      throw new Error(`User ${payment.user_id} not found.`);
+    if (activeWalletFulfillments.has(payment.id)) {
+      logger.info(`Wallet top-up for payment ${paymentId} currently active in another thread. Skipping duplicate run.`);
+      const wallet = await walletRepo.getOrCreateWallet(payment.user_id);
+      return { success: true, newBalance: wallet.balance, inProgress: true };
     }
 
-    // Atomic Balance Ledger Credit
-    const walletTx = await walletRepo.adjustBalance({
-      userId: payment.user_id,
-      amount: Number(payment.amount),
-      type: WALLET_TX_TYPE.TOPUP,
-      paymentId: payment.id,
-      description: `Wallet Top-Up via ABA KHQR (+${Number(payment.amount).toFixed(2)} USD)`
-    });
+    activeWalletFulfillments.add(payment.id);
 
-    // Send Telegram Notification
-    if (user.telegram_id) {
-      await notifyBalanceTopUp(user.telegram_id, payment.amount, walletTx.balance_after);
+    try {
+      const user = await userRepo.findById(payment.user_id);
+      if (!user) {
+        throw new Error(`User ${payment.user_id} not found.`);
+      }
+
+      // Atomic Balance Ledger Credit
+      const walletTx = await walletRepo.adjustBalance({
+        userId: payment.user_id,
+        amount: Number(payment.amount),
+        type: WALLET_TX_TYPE.TOPUP,
+        paymentId: payment.id,
+        description: `Wallet Top-Up via ABA KHQR (+${Number(payment.amount).toFixed(2)} USD)`
+      });
+
+      // Send strictly ONE Telegram notification to Bot and Group for wallet top-up
+      await notifyWalletTopUpCompleted({
+        user,
+        amount: payment.amount,
+        newBalance: walletTx.balance_after,
+        payment
+      });
+
+      return {
+        success: true,
+        newBalance: walletTx.balance_after,
+        amount: payment.amount,
+        transaction: walletTx
+      };
+    } finally {
+      activeWalletFulfillments.delete(payment.id);
     }
-
-    // Notify Admin & Supergroup
-    await notifyAdmin('💰 Wallet Balance Top-Up', {
-      user: user?.email || (user?.username ? `@${user.username}` : user?.first_name || 'Customer'),
-      amount: `+$${Number(payment.amount).toFixed(2)} USD`,
-      new_balance: `$${Number(walletTx.balance_after).toFixed(2)} USD`,
-      method: 'ABA KHQR (Bakong)'
-    });
-
-    return {
-      success: true,
-      newBalance: walletTx.balance_after,
-      amount: payment.amount,
-      transaction: walletTx
-    };
   },
 
   /**
@@ -455,9 +468,31 @@ export const paymentService = {
       throw new Error(`Order ${orderId} not found for fulfillment.`);
     }
 
-    const user = await userRepo.findById(order.user_id);
+    // IDEMPOTENCY GUARD: If already completed, NEVER fulfill again or send notifications
+    if (order.status === ORDER_STATUS.COMPLETED) {
+      logger.info(`Order #${order.order_number} is already COMPLETED. Skipping duplicate fulfillment & notifications.`);
+      return {
+        success: true,
+        order,
+        alreadyCompleted: true
+      };
+    }
+
+    // Concurrency lock to prevent race condition between frontend poller & scheduler
+    if (activeOrderFulfillments.has(order.id)) {
+      logger.info(`Order #${order.order_number} fulfillment currently active in another worker. Waiting.`);
+      return {
+        success: true,
+        order,
+        inProgress: true
+      };
+    }
+
+    activeOrderFulfillments.add(order.id);
 
     try {
+      const user = await userRepo.findById(order.user_id);
+
       // Transition Order to STOCK_RESERVED / DELIVERING
       await orderRepo.updateOrderStatus(order.id, ORDER_STATUS.DELIVERING);
 
@@ -472,22 +507,13 @@ export const paymentService = {
       // Mark Order as COMPLETED
       await orderRepo.updateOrderStatus(order.id, ORDER_STATUS.COMPLETED);
 
-      // Send Instant Telegram Delivery Notification to customer with account / keys
-      const customerTelegramId = user?.telegram_id || (user?.username === 'darazzdev' ? '8361673413' : null);
-      if (customerTelegramId) {
-        await notifyOrderDelivered(customerTelegramId, order, order.items, deliveries);
-      } else {
-        logger.info(`Customer does not have a linked telegram_id for Order #${order.order_number}. User ID: ${order.user_id}`);
-      }
-
-      // Notify Admin & Supergroup
-      await notifyAdmin('🎉 New Order Completed & Paid', {
-        order_number: order.order_number,
-        customer: user?.email || (user?.username ? `@${user.username}` : user?.first_name || 'Customer'),
-        items: order.items?.map(it => `${it.product_name} (x${it.quantity})`).join(', ') || 'Digital Products',
-        topup_account: order.customer_notes || undefined,
-        total: `$${Number(order.total_amount).toFixed(2)} USD`,
-        payment_method: order.payment_method || 'ABA PayWay'
+      // SEND STRICTLY ONE TELEGRAM NOTIFICATION ON PAYMENT DONE
+      await notifyPaymentCompleted({
+        order,
+        items: order.items,
+        deliveries,
+        user,
+        paymentMethod: order.payment_method || 'ABA PayWay / KHQR'
       });
 
       const completedOrder = await orderRepo.findById(order.id);
@@ -510,14 +536,16 @@ export const paymentService = {
       await notifyAdmin('CRITICAL: Stock Error on Paid Order', {
         order_number: order.order_number,
         error: err.message,
-        customer: user?.telegram_id
+        customer: order.user_id
       });
 
       return {
         success: false,
         status: ORDER_STATUS.STOCK_ERROR,
-        message: 'Payment received, but automatic stock delivery is pending store support review.'
+        error: err.message
       };
+    } finally {
+      activeOrderFulfillments.delete(order.id);
     }
   }
 };

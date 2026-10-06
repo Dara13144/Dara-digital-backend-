@@ -39,7 +39,9 @@ export const orderService = {
         }
       }
 
-      const unitPrice = Number(product.price || 0);
+      const unitPrice = product.discount_price !== null && product.discount_price !== undefined
+        ? Number(product.discount_price)
+        : Number(product.price || 0);
       const itemTotal = Number((unitPrice * qty).toFixed(2));
 
       subtotal += itemTotal;

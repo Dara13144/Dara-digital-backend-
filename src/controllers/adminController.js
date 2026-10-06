@@ -63,7 +63,10 @@ export const adminController = {
   async updateProduct(req, res) {
     try {
       const { id } = req.params;
-      const updated = await productRepo.update(id, req.body);
+      let updated = await productRepo.update(id, req.body);
+      if (!updated) {
+        updated = await productRepo.create({ ...req.body, id });
+      }
       if (!updated) {
         return errorResponse(res, ERROR_CODES.RESOURCE_NOT_FOUND, 'Product not found', 404);
       }
@@ -89,7 +92,7 @@ export const adminController = {
         return errorResponse(res, ERROR_CODES.RESOURCE_NOT_FOUND, 'Product not found', 404);
       }
       await adminRepo.logAdminAction({
-        adminId: req.user.userId,
+        adminId: req.user?.userId || req.user?.id || 'admin',
         action: 'DELETE_PRODUCT',
         targetType: 'PRODUCT',
         targetId: id,

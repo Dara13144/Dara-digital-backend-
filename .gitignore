@@ -26,3 +26,6 @@ Thumbs.db
 
 # Test coverage
 coverage/
+
+# Local Scratch & One-off debug scripts
+scratch/

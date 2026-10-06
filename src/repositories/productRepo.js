@@ -47,6 +47,8 @@ export const productRepo = {
 
         if (publishedOnly) {
           sql += ` AND p.published = true AND p.status = 'published'`;
+        } else {
+          sql += ` AND p.status != 'archived'`;
         }
 
         if (categorySlug) {
@@ -55,6 +57,9 @@ export const productRepo = {
         } else if (categoryId) {
           sql += ` AND p.category_id = $${pIndex++}`;
           params.push(categoryId);
+        } else {
+          // Do not show topup packages in the general store catalog
+          sql += ` AND (c.slug != 'topup' OR c.slug IS NULL)`;
         }
 
         if (search) {
@@ -111,7 +116,7 @@ export const productRepo = {
         params.push(limit, (page - 1) * limit);
 
         const res = await dbPool.query(sql, params);
-        if (res.rows && res.rows.length > 0) {
+        if (res.rows) {
           const result = { items: res.rows, total, page, limit };
           fastCache.set(cacheKey, result, 30000);
           return result;
@@ -125,6 +130,8 @@ export const productRepo = {
 
     if (publishedOnly) {
       list = list.filter((p) => p.published === true && p.status === 'published');
+    } else {
+      list = list.filter((p) => p.status !== 'archived');
     }
 
     if (categorySlug) {
@@ -136,6 +143,11 @@ export const productRepo = {
       }
     } else if (categoryId) {
       list = list.filter((p) => p.category_id === categoryId);
+    } else {
+      const topUpCat = memoryStore.categories.find((c) => c.slug === 'topup');
+      if (topUpCat) {
+        list = list.filter((p) => p.category_id !== topUpCat.id);
+      }
     }
 
     if (search) {
@@ -308,11 +320,11 @@ export const productRepo = {
           `INSERT INTO products (
             id, category_id, name, name_km, slug, description, description_km,
             images, price, discount_price, currency, stock_type, stock_quantity,
-            sold_quantity, status, featured, published, rating, instructions
+            sold_quantity, status, featured, published, rating, instructions, badge
           ) VALUES (
             $1, $2, $3, $4, $5, $6, $7,
             $8, $9, $10, $11, $12, $13,
-            $14, $15, $16, $17, $18, $19
+            $14, $15, $16, $17, $18, $19, $20
           ) RETURNING *`,
           [
             newProduct.id, newProduct.category_id, newProduct.name, newProduct.name_km,
@@ -320,7 +332,8 @@ export const productRepo = {
             newProduct.images, newProduct.price, newProduct.discount_price,
             newProduct.currency, newProduct.stock_type, newProduct.stock_quantity,
             newProduct.sold_quantity, newProduct.status, newProduct.featured,
-            newProduct.published, newProduct.rating, newProduct.instructions
+            newProduct.published, newProduct.rating, newProduct.instructions,
+            data.badge || null
           ]
         );
         if (res.rows[0]) {
@@ -358,6 +371,7 @@ export const productRepo = {
                published = COALESCE($13, published),
                instructions = COALESCE($14, instructions),
                status = COALESCE($15, status),
+               badge = COALESCE($16, badge),
                updated_at = NOW()
            WHERE id = $1 RETURNING *`,
           [
@@ -365,7 +379,8 @@ export const productRepo = {
             data.description, data.description_km, data.images,
             data.price !== undefined ? Number(data.price) : null,
             data.discount_price !== undefined ? (data.discount_price ? Number(data.discount_price) : null) : null,
-            data.stock_type, data.featured, data.published, data.instructions, data.status
+            data.stock_type, data.featured, data.published, data.instructions, data.status,
+            data.badge !== undefined ? data.badge : null
           ]
         );
         if (res.rows[0]) {
@@ -373,6 +388,46 @@ export const productRepo = {
           const idx = memoryStore.products.findIndex((p) => p.id === id);
           if (idx !== -1) memoryStore.products[idx] = res.rows[0];
           return res.rows[0];
+        }
+
+        // If product does not exist in DB yet, upsert it
+        const insertRes = await dbPool.query(
+          `INSERT INTO products (
+            id, category_id, name, name_km, slug, description, description_km,
+            images, price, discount_price, currency, stock_type, stock_quantity,
+            sold_quantity, status, featured, published, rating, instructions, badge
+          ) VALUES (
+            $1, COALESCE($2, '10000000-0000-0000-0000-000000000006'), COALESCE($3, 'Product'), COALESCE($4, $3, 'Product'),
+            COALESCE($5, $1::text), COALESCE($6, ''), COALESCE($7, ''),
+            COALESCE($8, ARRAY['/categories/topup.png']::text[]), COALESCE($9, 0), $10, 'USD',
+            COALESCE($11, 'manual'), 999, 0, COALESCE($12, 'published'), COALESCE($13, false),
+            COALESCE($14, true), 5.0, COALESCE($15, ''), $16
+          )
+          ON CONFLICT (id) DO UPDATE SET
+            name = EXCLUDED.name,
+            name_km = EXCLUDED.name_km,
+            price = EXCLUDED.price,
+            discount_price = EXCLUDED.discount_price,
+            category_id = EXCLUDED.category_id,
+            badge = EXCLUDED.badge,
+            updated_at = NOW()
+          RETURNING *`,
+          [
+            id, data.category_id, data.name, data.name_km, slug,
+            data.description, data.description_km, Array.isArray(data.images) ? data.images : ['/categories/topup.png'],
+            data.price !== undefined ? Number(data.price) : null,
+            data.discount_price !== undefined ? (data.discount_price ? Number(data.discount_price) : null) : null,
+            data.stock_type, data.status, data.featured, data.published, data.instructions,
+            data.badge !== undefined ? data.badge : null
+          ]
+        );
+
+        if (insertRes.rows[0]) {
+          fastCache.invalidate('prods_');
+          const idx = memoryStore.products.findIndex((p) => p.id === id);
+          if (idx !== -1) memoryStore.products[idx] = insertRes.rows[0];
+          else memoryStore.products.unshift(insertRes.rows[0]);
+          return insertRes.rows[0];
         }
       }
     } catch (err) {
@@ -399,19 +454,49 @@ export const productRepo = {
 
   async delete(id) {
     fastCache.invalidate('prods_');
+    let deleted = false;
+
     try {
       if (dbPool) {
-        await dbPool.query('DELETE FROM products WHERE id = $1', [id]);
-      } else {
-        await supabaseAdmin.from('products').delete().eq('id', id);
+        const res = await dbPool.query('DELETE FROM products WHERE id = $1 RETURNING id', [id]);
+        if (res.rowCount > 0) {
+          deleted = true;
+        }
+      } else if (supabaseAdmin) {
+        const { data, error } = await supabaseAdmin.from('products').delete().eq('id', id).select('id');
+        if (!error && data && data.length > 0) {
+          deleted = true;
+        }
       }
     } catch (err) {
-      // Fallback
+      console.warn(`[productRepo.delete] Hard delete failed for ${id}, attempting soft delete/archive:`, err.message);
+      // Fallback: If foreign keys prevent hard delete, soft delete by archiving and unpublishing
+      try {
+        if (dbPool) {
+          const res = await dbPool.query(
+            "UPDATE products SET status = 'archived', published = false, updated_at = NOW() WHERE id = $1 RETURNING id",
+            [id]
+          );
+          if (res.rowCount > 0) deleted = true;
+        } else if (supabaseAdmin) {
+          const { data } = await supabaseAdmin
+            .from('products')
+            .update({ status: 'archived', published: false })
+            .eq('id', id)
+            .select('id');
+          if (data && data.length > 0) deleted = true;
+        }
+      } catch (archiveErr) {
+        console.error(`[productRepo.delete] Archive fallback failed for ${id}:`, archiveErr.message);
+      }
     }
 
     const index = memoryStore.products.findIndex((p) => p.id === id);
-    if (index === -1) return false;
-    memoryStore.products.splice(index, 1);
-    return true;
+    if (index !== -1) {
+      memoryStore.products.splice(index, 1);
+      deleted = true;
+    }
+
+    return deleted;
   }
 };

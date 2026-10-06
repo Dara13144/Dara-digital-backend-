@@ -86,14 +86,16 @@ export const orderRepo = {
         if (rows.length > 0) {
           const order = rows[0];
           const itemsRes = await dbPool.query('SELECT * FROM order_items WHERE order_id = $1', [orderId]);
-          const delivRes = await dbPool.query('SELECT * FROM digital_deliveries WHERE order_id = $1', [orderId]).catch(() => ({ rows: [] }));
-          const userRes = await dbPool.query('SELECT id, telegram_id, first_name, username FROM users WHERE id = $1', [order.user_id]).catch(() => ({ rows: [] }));
+          // Use 'deliveries' table (matching Supabase schema migration)
+          const delivRes = await dbPool.query('SELECT * FROM deliveries WHERE order_id = $1 ORDER BY delivered_at ASC', [orderId]).catch(() => ({ rows: [] }));
+          const userRes = await dbPool.query('SELECT id, telegram_id, first_name, username, email FROM users WHERE id = $1', [order.user_id]).catch(() => ({ rows: [] }));
+          const paymentRes = await dbPool.query('SELECT * FROM payments WHERE order_id = $1 ORDER BY created_at DESC LIMIT 1', [orderId]).catch(() => ({ rows: [] }));
 
           return {
             ...order,
             items: itemsRes.rows || [],
             deliveries: delivRes.rows || [],
-            payment: null,
+            payment: paymentRes.rows[0] || null,
             user: userRes.rows[0] || null
           };
         }
@@ -115,17 +117,66 @@ export const orderRepo = {
       items,
       deliveries,
       payment: payment || null,
-      user: user ? { id: user.id, telegram_id: user.telegram_id, first_name: user.first_name, username: user.username } : null
+      user: user ? { id: user.id, telegram_id: user.telegram_id, first_name: user.first_name, username: user.username, email: user.email } : null
     };
   },
 
   async findByOrderNumber(orderNumber) {
+    if (dbPool) {
+      try {
+        const { rows } = await dbPool.query('SELECT id FROM orders WHERE order_number = $1 LIMIT 1', [orderNumber]);
+        if (rows.length > 0) {
+          return await this.findById(rows[0].id);
+        }
+      } catch (err) {
+        logger.debug('dbPool findByOrderNumber fallback:', err.message);
+      }
+    }
+
     const order = memoryStore.orders.find((o) => o.order_number === orderNumber);
     if (!order) return null;
     return this.findById(order.id);
   },
 
   async getOrdersByUser(userId, { page = 1, limit = 20 } = {}) {
+    if (dbPool) {
+      try {
+        const offset = (page - 1) * limit;
+        const countRes = await dbPool.query(
+          'SELECT count(*)::int as count FROM orders WHERE user_id = $1',
+          [userId]
+        );
+        const total = countRes.rows[0]?.count || 0;
+
+        const { rows: orders } = await dbPool.query(
+          `SELECT * FROM orders 
+           WHERE user_id = $1 
+           ORDER BY created_at DESC 
+           LIMIT $2 OFFSET $3`,
+          [userId, limit, offset]
+        );
+
+        if (orders.length > 0) {
+          const orderIds = orders.map((o) => o.id);
+          const { rows: items } = await dbPool.query(
+            'SELECT * FROM order_items WHERE order_id = ANY($1::uuid[])',
+            [orderIds]
+          );
+
+          const populated = orders.map((o) => ({
+            ...o,
+            items: items.filter((it) => it.order_id === o.id)
+          }));
+
+          return { items: populated, total, page, limit };
+        }
+
+        return { items: [], total: 0, page, limit };
+      } catch (err) {
+        logger.debug('dbPool getOrdersByUser error, falling back:', err.message);
+      }
+    }
+
     const list = memoryStore.orders
       .filter((o) => o.user_id === userId)
       .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
@@ -142,6 +193,65 @@ export const orderRepo = {
   },
 
   async getAllOrders({ status, search, page = 1, limit = 20 } = {}) {
+    if (dbPool) {
+      try {
+        let query = `
+          SELECT o.*, 
+                 json_build_object(
+                   'id', u.id, 
+                   'first_name', u.first_name, 
+                   'last_name', u.last_name, 
+                   'username', u.username, 
+                   'email', u.email, 
+                   'telegram_id', u.telegram_id
+                 ) as user
+          FROM orders o
+          LEFT JOIN users u ON o.user_id = u.id
+          WHERE 1=1
+        `;
+        const params = [];
+
+        if (status) {
+          params.push(status);
+          query += ` AND o.status = $${params.length}`;
+        }
+
+        if (search) {
+          params.push(`%${search.trim().toLowerCase()}%`);
+          query += ` AND (LOWER(o.order_number) LIKE $${params.length} OR LOWER(COALESCE(u.username, '')) LIKE $${params.length} OR CAST(u.telegram_id AS TEXT) LIKE $${params.length})`;
+        }
+
+        const countQuery = `SELECT count(*)::int as count FROM (${query}) as count_tbl`;
+        const countRes = await dbPool.query(countQuery, params);
+        const total = countRes.rows[0]?.count || 0;
+
+        const offset = (page - 1) * limit;
+        params.push(limit, offset);
+        query += ` ORDER BY o.created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`;
+
+        const { rows: orders } = await dbPool.query(query, params);
+
+        if (orders.length > 0) {
+          const orderIds = orders.map((o) => o.id);
+          const { rows: items } = await dbPool.query(
+            'SELECT * FROM order_items WHERE order_id = ANY($1::uuid[])',
+            [orderIds]
+          );
+
+          const populated = orders.map((o) => ({
+            ...o,
+            items: items.filter((it) => it.order_id === o.id)
+          }));
+
+          return { items: populated, total, page, limit };
+        }
+
+        return { items: [], total: 0, page, limit };
+      } catch (err) {
+        logger.warn('dbPool getAllOrders error, falling back:', err.message);
+      }
+    }
+
     let list = [...memoryStore.orders];
 
     if (status) {

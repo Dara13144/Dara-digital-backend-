@@ -2,6 +2,31 @@ import axios from 'axios';
 import { ENV } from '../../config/env.js';
 import { logger } from '../../config/logger.js';
 
+// In-memory deduplication cache to guarantee exactly-once Telegram notifications
+const processedNotifications = new Set();
+
+export function isNotificationAlreadySent(key) {
+  if (!key) return false;
+  return processedNotifications.has(String(key));
+}
+
+export function markNotificationSent(key) {
+  if (!key) return;
+  processedNotifications.add(String(key));
+  // Keep set bounded to avoid unbounded memory growth
+  if (processedNotifications.size > 5000) {
+    const firstKey = processedNotifications.values().next().value;
+    processedNotifications.delete(firstKey);
+  }
+}
+
+/**
+ * Gets the single primary destination for store reports / bot notifications
+ */
+export function getReportChatId() {
+  return ENV.TELEGRAM_REPORT_CHANNEL_ID || ENV.TELEGRAM_ADMIN_CHAT_ID || null;
+}
+
 /**
  * Sends a message via Telegram Bot API
  */
@@ -30,14 +55,171 @@ export async function sendTelegramMessage(chatId, text, options = {}) {
 }
 
 /**
+ * Send EXACTLY ONE notification message on Telegram when a user payment is done.
+ * Deduplicates automatically across order/payment ID.
+ */
+export async function notifyPaymentCompleted({
+  order,
+  items = [],
+  deliveries = [],
+  user = null,
+  paymentMethod = 'ABA KHQR (Bakong)',
+  payment = null
+}) {
+  const dedupKey = `order_payment_done_${order?.id || payment?.id || order?.order_number}`;
+  if (isNotificationAlreadySent(dedupKey)) {
+    logger.info(`[Telegram] Skipped duplicate payment notification for ${dedupKey}`);
+    return false;
+  }
+  markNotificationSent(dedupKey);
+
+  // Digital accounts / keys delivery text
+  let deliveryDetailsText = '';
+  if (deliveries && deliveries.length > 0) {
+    deliveries.forEach((d, idx) => {
+      const matchedItem = items?.find((it) => it.product_id === d.product_id || it.id === d.product_id) || items?.[idx];
+      const itemTitle = matchedItem?.product_name || `Product Item ${idx + 1}`;
+      const payload = String(d.delivery_payload || '').trim();
+      deliveryDetailsText += `\n📦 <b>${escapeHtml(itemTitle)}:</b>\n<code>${escapeHtml(payload)}</code>`;
+    });
+  }
+
+  // Purchased items summary
+  const itemsText = items && items.length > 0
+    ? items.map(it => `• ${escapeHtml(it.product_name || it.name || 'Product')} (x${it.quantity || 1})`).join('\n')
+    : 'Digital Products';
+
+  const customerName = user?.email || (user?.username ? `@${user.username}` : user?.first_name || 'Customer');
+  const robloxName = order?.customer_notes || user?.roblox_username || null;
+  const totalAmount = Number(order?.total_amount || payment?.amount || 0).toFixed(2);
+  const currency = order?.currency || payment?.currency || 'USD';
+
+  const isTopUpOrder = Boolean(
+    order?.customer_notes?.toLowerCase().includes('roblox') ||
+    order?.customer_notes?.toLowerCase().includes('topup') ||
+    order?.customer_notes?.toLowerCase().includes('player') ||
+    items?.some(it => 
+      (it.product_name || '').toLowerCase().includes('top-up') || 
+      (it.product_name || '').toLowerCase().includes('topup') ||
+      (it.product_name || '').toLowerCase().includes('robux') ||
+      (it.product_name || '').toLowerCase().includes('blox') ||
+      it.stock_type === 'manual'
+    )
+  );
+
+  const headerTitle = isTopUpOrder
+    ? `⚡ <b>USER TOP-UP SUCCESSFUL!</b>`
+    : `🎉 <b>Payment Done & Order Delivered!</b>`;
+
+  // Consolidated single Telegram message
+  const message =
+    `${headerTitle}\n\n` +
+    `🧾 <b>${isTopUpOrder ? 'Top-Up Order ID' : 'Order ID'}:</b> <code>#${escapeHtml(order?.order_number || payment?.transaction_id)}</code>\n` +
+    `👤 <b>Customer:</b> ${escapeHtml(customerName)}\n` +
+    (robloxName ? `🎮 <b>Roblox / Player ID:</b> <code>${escapeHtml(robloxName)}</code>\n` : '') +
+    `💰 <b>Total Paid:</b> <b>$${totalAmount} ${escapeHtml(currency)}</b>\n` +
+    `⚡ <b>Payment Method:</b> ${escapeHtml(paymentMethod)}\n\n` +
+    `🛍️ <b>${isTopUpOrder ? 'Top-Up Package' : 'Items'}:</b>\n${itemsText}\n` +
+    (deliveryDetailsText ? `\n🔐 <b>Instant Delivery (Tap to Copy):</b>${deliveryDetailsText}\n` : '') +
+    `\n⏱ <i>${new Date().toLocaleString('en-US', { timeZone: 'Asia/Phnom_Penh' })} (Phnom Penh)</i>\n` +
+    `🤖 <i>Delivered automatically by @Maiser_report_bot</i>`;
+
+  const isHttps = typeof ENV.FRONTEND_URL === 'string' && ENV.FRONTEND_URL.startsWith('https://');
+  const replyMarkup = isHttps
+    ? {
+        inline_keyboard: [
+          [
+            {
+              text: '⚡ Open Store',
+              web_app: { url: ENV.FRONTEND_URL }
+            }
+          ]
+        ]
+      }
+    : undefined;
+
+  // 1. Send strictly ONE message to Telegram Group / Channel
+  if (ENV.TELEGRAM_REPORT_CHANNEL_ID) {
+    logger.info(`[Telegram] Sending 1 notification to Group (${ENV.TELEGRAM_REPORT_CHANNEL_ID}) for Order #${order?.order_number}`);
+    await sendTelegramMessage(ENV.TELEGRAM_REPORT_CHANNEL_ID, message, { replyMarkup });
+  }
+
+  // 2. Send strictly ONE message to Telegram Bot / Admin Chat
+  if (ENV.TELEGRAM_ADMIN_CHAT_ID && String(ENV.TELEGRAM_ADMIN_CHAT_ID) !== String(ENV.TELEGRAM_REPORT_CHANNEL_ID)) {
+    logger.info(`[Telegram] Sending 1 notification to Bot (${ENV.TELEGRAM_ADMIN_CHAT_ID}) for Order #${order?.order_number}`);
+    await sendTelegramMessage(ENV.TELEGRAM_ADMIN_CHAT_ID, message, { replyMarkup });
+  }
+
+  // 3. If customer is an authenticated Telegram Mini App user (with a distinct ID from bot/group),
+  // send their personal delivery receipt directly to their chat
+  const customerTelegramId = user?.telegram_id;
+  if (customerTelegramId && 
+      String(customerTelegramId) !== String(ENV.TELEGRAM_REPORT_CHANNEL_ID) && 
+      String(customerTelegramId) !== String(ENV.TELEGRAM_ADMIN_CHAT_ID)) {
+    await notifyOrderDelivered(customerTelegramId, order, items, deliveries);
+  }
+
+  return true;
+}
+
+/**
+ * Send EXACTLY ONE notification message on Telegram when wallet balance top-up is completed
+ */
+export async function notifyWalletTopUpCompleted({
+  user,
+  amount,
+  newBalance,
+  payment
+}) {
+  const dedupKey = `wallet_topup_done_${payment?.id || payment?.transaction_id}`;
+  if (isNotificationAlreadySent(dedupKey)) {
+    logger.info(`[Telegram] Skipped duplicate wallet top-up notification for ${dedupKey}`);
+    return false;
+  }
+  markNotificationSent(dedupKey);
+
+  const customerName = user?.email || (user?.username ? `@${user.username}` : user?.first_name || 'Customer');
+  const message =
+    `💰 <b>USER TOP-UP SUCCESSFUL (WALLET)!</b>\n\n` +
+    `👤 <b>Customer / User:</b> ${escapeHtml(customerName)}\n` +
+    `➕ <b>Top-Up Amount:</b> <b>+$${Number(amount).toFixed(2)} USD</b>\n` +
+    `💳 <b>New Wallet Balance:</b> <b>$${Number(newBalance).toFixed(2)} USD</b>\n` +
+    `⚡ <b>Payment Method:</b> ABA KHQR (Bakong)\n\n` +
+    `⏱ <i>${new Date().toLocaleString('en-US', { timeZone: 'Asia/Phnom_Penh' })} (Phnom Penh)</i>\n` +
+    `🤖 <i>Processed automatically by @Maiser_report_bot</i>`;
+
+  // 1. Send strictly ONE message to Telegram Group / Channel
+  if (ENV.TELEGRAM_REPORT_CHANNEL_ID) {
+    await sendTelegramMessage(ENV.TELEGRAM_REPORT_CHANNEL_ID, message);
+  }
+
+  // 2. Send strictly ONE message to Telegram Bot / Admin Chat
+  if (ENV.TELEGRAM_ADMIN_CHAT_ID && String(ENV.TELEGRAM_ADMIN_CHAT_ID) !== String(ENV.TELEGRAM_REPORT_CHANNEL_ID)) {
+    await sendTelegramMessage(ENV.TELEGRAM_ADMIN_CHAT_ID, message);
+  }
+
+  // 3. If customer has personal Telegram ID distinct from bot/group
+  if (user?.telegram_id && 
+      String(user.telegram_id) !== String(ENV.TELEGRAM_REPORT_CHANNEL_ID) && 
+      String(user.telegram_id) !== String(ENV.TELEGRAM_ADMIN_CHAT_ID)) {
+    await notifyBalanceTopUp(user.telegram_id, amount, newBalance);
+  }
+
+  return true;
+}
+
+/**
  * Notify customer upon completed digital delivery
- * Sends the purchased account, keys, or digital payload directly to the user's Telegram chat
  */
 export async function notifyOrderDelivered(telegramId, order, items = [], deliveries = []) {
-  if (!telegramId) {
-    logger.warn(`Cannot send Telegram delivery notification: Missing telegramId for Order #${order?.order_number}`);
+  if (!telegramId) return;
+
+  const dedupKey = `order_delivery_${telegramId}_${order?.id || order?.order_number}`;
+  if (isNotificationAlreadySent(dedupKey)) {
+    logger.info(`[Telegram] Skipped duplicate delivery slip for ${dedupKey}`);
     return;
   }
+  markNotificationSent(dedupKey);
 
   let deliveryDetailsText = '';
   if (deliveries && deliveries.length > 0) {
@@ -60,7 +242,7 @@ export async function notifyOrderDelivered(telegramId, order, items = [], delive
     `🔐 <b>Your Purchased Account / Key (Tap to Copy):</b>\n` +
     deliveryDetailsText +
     `\n<i>💡 Tip: Tap the code block above to copy instantly to your clipboard.</i>\n` +
-    `<i>🤖 Delivered 24/7 by @DaraDigital_bot</i>`;
+    `<i>🤖 Delivered 24/7 by @Maiser_report_bot</i>`;
 
   const isHttps = typeof ENV.FRONTEND_URL === 'string' && ENV.FRONTEND_URL.startsWith('https://');
   const replyMarkup = isHttps
@@ -80,7 +262,6 @@ export async function notifyOrderDelivered(telegramId, order, items = [], delive
       }
     : undefined;
 
-  logger.info(`Sending instant digital delivery to Telegram User ${telegramId} for Order #${order.order_number}`);
   await sendTelegramMessage(telegramId, message, { replyMarkup });
 }
 
@@ -90,25 +271,17 @@ export async function notifyOrderDelivered(telegramId, order, items = [], delive
 export async function notifyBalanceTopUp(telegramId, amount, newBalance) {
   if (!telegramId) return;
 
+  const dedupKey = `customer_topup_${telegramId}_${amount}_${newBalance}`;
+  if (isNotificationAlreadySent(dedupKey)) return;
+  markNotificationSent(dedupKey);
+
   const message = `💰 <b>Balance Top-Up Successful!</b>\n\n` +
     `➕ <b>Added:</b> +$${Number(amount).toFixed(2)} USD\n` +
     `💳 <b>New Wallet Balance:</b> $${Number(newBalance).toFixed(2)} USD\n` +
     `⚡ <b>Payment Method:</b> ABA KHQR Auto-Check\n\n` +
     `<i>You can now use your wallet balance to checkout instantly on Maiser Store.</i>`;
 
-  const isHttps = typeof ENV.FRONTEND_URL === 'string' && ENV.FRONTEND_URL.startsWith('https://');
-  const replyMarkup = isHttps ? {
-    inline_keyboard: [
-      [
-        {
-          text: '🛍️ Shop Now',
-          web_app: { url: ENV.FRONTEND_URL }
-        }
-      ]
-    ]
-  } : undefined;
-
-  await sendTelegramMessage(telegramId, message, { replyMarkup });
+  await sendTelegramMessage(telegramId, message);
 }
 
 /**
@@ -161,7 +334,8 @@ function formatDetailsHtml(details) {
 }
 
 /**
- * Notify Admin chat for key store events (New order, Stock warning, Stock error)
+ * Notify Admin chat for store alerts (Stock warning, Critical errors)
+ * Sends to ONLY ONE destination (Report channel or Admin chat)
  */
 export async function notifyAdmin(title, details) {
   if (!ENV.TELEGRAM_ADMIN_CHAT_ID && !ENV.TELEGRAM_REPORT_CHANNEL_ID) return;
@@ -183,12 +357,12 @@ export async function notifyAdmin(title, details) {
     ]
   } : undefined;
 
-  // 1. Post to Report Channel / Supergroup (-1003823688631)
+  // 1. Send strictly ONE message to Telegram Group / Channel
   if (ENV.TELEGRAM_REPORT_CHANNEL_ID) {
     await sendTelegramMessage(ENV.TELEGRAM_REPORT_CHANNEL_ID, message, { replyMarkup });
   }
 
-  // 2. Post to Admin Private Chat (7789859191)
+  // 2. Send strictly ONE message to Telegram Bot / Admin Chat
   if (ENV.TELEGRAM_ADMIN_CHAT_ID && String(ENV.TELEGRAM_ADMIN_CHAT_ID) !== String(ENV.TELEGRAM_REPORT_CHANNEL_ID)) {
     await sendTelegramMessage(ENV.TELEGRAM_ADMIN_CHAT_ID, message, { replyMarkup });
   }
@@ -202,4 +376,3 @@ function escapeHtml(str) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
 }
-
