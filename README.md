@@ -43,6 +43,9 @@ backend/
 │   ├── validators/      # Request validation schemas
 │   ├── app.js           # Express app setup
 │   └── server.js        # Server entry point
+├── supabase/
+│   ├── migrations/      # PostgreSQL schemas, functions, triggers, and RLS policies
+│   └── seed.sql         # Default store categories, initial demo products & settings
 ├── tests/               # Unit and integration test suites
 ├── .env.example         # Environment template
 └── package.json
