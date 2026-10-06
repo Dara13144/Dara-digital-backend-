@@ -21,6 +21,7 @@ export const ENV = {
 
   // Google OAuth & Admin
   GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID || '',
+  GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET || '',
   ADMIN_EMAILS: (process.env.ADMIN_EMAILS || 'darazzdev@gmail.com,admin@daradigital.store')
     .split(',')
     .map((e) => e.trim().toLowerCase())

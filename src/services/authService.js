@@ -1,4 +1,5 @@
 import jwt from 'jsonwebtoken';
+import axios from 'axios';
 import { ENV } from '../config/env.js';
 import { userRepo } from '../repositories/userRepo.js';
 import { verifyTelegramInitData } from '../integrations/telegram/initDataVerifier.js';
@@ -96,18 +97,54 @@ export const authService = {
     // If a Google JWT ID Token (credential) was passed, verify or decode it
     if (credential) {
       try {
-        const parts = credential.split('.');
-        if (parts.length === 3) {
-          const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+        // Attempt verification with Google tokeninfo endpoint
+        const response = await axios.get(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(credential)}`, {
+          timeout: 4000
+        });
+        if (response.data && response.data.email) {
           googleUser = {
-            email: payload.email || googleUser.email,
-            name: payload.name || payload.given_name || googleUser.name,
-            picture: payload.picture || googleUser.picture,
-            sub: payload.sub || googleUser.sub
+            email: response.data.email,
+            name: response.data.name || response.data.given_name || googleUser.name,
+            picture: response.data.picture || googleUser.picture,
+            sub: response.data.sub || googleUser.sub
           };
         }
-      } catch (err) {
-        logger.warn('Failed to parse Google JWT payload directly:', err.message);
+      } catch (tokenErr) {
+        // Fallback to JWT payload decoding
+        try {
+          const parts = credential.split('.');
+          if (parts.length === 3) {
+            const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+            googleUser = {
+              email: payload.email || googleUser.email,
+              name: payload.name || payload.given_name || googleUser.name,
+              picture: payload.picture || googleUser.picture,
+              sub: payload.sub || googleUser.sub
+            };
+          }
+        } catch (jwtErr) {
+          logger.warn('Failed to parse Google JWT payload directly:', jwtErr.message);
+        }
+      }
+    }
+
+    // If an OAuth2 access token was passed, retrieve user info from Google
+    if (accessToken && (!googleUser.email || !googleUser.name)) {
+      try {
+        const userInfoRes = await axios.get('https://www.googleapis.com/oauth2/v3/userinfo', {
+          headers: { Authorization: `Bearer ${accessToken}` },
+          timeout: 4000
+        });
+        if (userInfoRes.data && userInfoRes.data.email) {
+          googleUser = {
+            email: userInfoRes.data.email,
+            name: userInfoRes.data.name || userInfoRes.data.given_name || googleUser.name,
+            picture: userInfoRes.data.picture || googleUser.picture,
+            sub: userInfoRes.data.sub || googleUser.sub
+          };
+        }
+      } catch (userErr) {
+        logger.warn('Google userinfo fetch note:', userErr.message);
       }
     }
 
