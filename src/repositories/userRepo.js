@@ -380,14 +380,66 @@ export const userRepo = {
   },
 
   async getAllUsers({ search, status, page = 1, limit = 20 }) {
-    let list = [...memoryStore.users];
+    if (dbPool) {
+      try {
+        let query = `
+          SELECT u.id, u.telegram_id, u.username, u.first_name, u.last_name, 
+                 u.email, u.avatar_url, u.status, u.language, u.total_spent, u.order_count,
+                 u.created_at, u.updated_at,
+                 COALESCE(w.balance, u.balance, 0.00) as balance,
+                 COALESCE(
+                   (SELECT json_agg(r.name) 
+                    FROM user_roles ur 
+                    JOIN roles r ON ur.role_id = r.id 
+                    WHERE ur.user_id = u.id),
+                   '["USER"]'::json
+                 ) as roles
+          FROM users u
+          LEFT JOIN wallets w ON w.user_id = u.id
+          WHERE 1=1
+        `;
+        const params = [];
+        if (search) {
+          params.push(`%${search.trim().toLowerCase()}%`);
+          query += ` AND (LOWER(COALESCE(u.username, '')) LIKE $${params.length} OR LOWER(COALESCE(u.first_name, '')) LIKE $${params.length} OR CAST(u.telegram_id AS TEXT) LIKE $${params.length} OR LOWER(COALESCE(u.email, '')) LIKE $${params.length})`;
+        }
+        if (status) {
+          params.push(status);
+          query += ` AND u.status = $${params.length}`;
+        }
+        query += ` ORDER BY u.created_at DESC`;
+
+        const countQuery = `SELECT COUNT(*) FROM (${query}) as count_tbl`;
+        const countRes = await dbPool.query(countQuery, params);
+        const total = parseInt(countRes.rows[0]?.count || '0', 10);
+
+        const offset = (page - 1) * limit;
+        params.push(limit, offset);
+        query += ` LIMIT $${params.length - 1} OFFSET $${params.length}`;
+
+        const { rows } = await dbPool.query(query, params);
+        return { items: rows, total, page, limit };
+      } catch (err) {
+        logger.debug('getAllUsers fallback to memory:', err.message);
+      }
+    }
+
+    let list = memoryStore.users.map((u) => {
+      const w = memoryStore.wallets.find((wal) => wal.user_id === u.id);
+      return {
+        ...u,
+        balance: w ? Number(w.balance) : Number(u.balance || 0)
+      };
+    });
+
     if (search) {
       const q = search.toLowerCase();
       list = list.filter(
         (u) =>
           u.username?.toLowerCase().includes(q) ||
           u.first_name?.toLowerCase().includes(q) ||
-          String(u.telegram_id).includes(q)
+          String(u.telegram_id).includes(q) ||
+          u.email?.toLowerCase().includes(q)
       );
     }
     if (status) {
@@ -399,6 +451,23 @@ export const userRepo = {
   },
 
   async updateUserStatus(userId, status) {
+    if (dbPool) {
+      try {
+        const { rows } = await dbPool.query(
+          'UPDATE users SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING *',
+          [status, userId]
+        );
+        if (rows.length > 0) {
+          const u = rows[0];
+          const mem = memoryStore.users.find((m) => m.id === userId);
+          if (mem) mem.status = status;
+          return u;
+        }
+      } catch (err) {
+        logger.debug('dbPool updateUserStatus fallback:', err.message);
+      }
+    }
+
     const user = await this.findById(userId);
     if (!user) return null;
     user.status = status;

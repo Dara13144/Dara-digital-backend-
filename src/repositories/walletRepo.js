@@ -1,12 +1,14 @@
-import { v4 as uuidv4 } from 'uuid';
+import { v4 as uuidv4, validate as uuidValidate } from 'uuid';
 import { memoryStore } from './storeMemory.js';
 import { WALLET_TX_TYPE } from '../constants/states.js';
 import { dbPool } from '../config/db.js';
 import { logger } from '../config/logger.js';
 
+const isUuid = (val) => typeof val === 'string' && uuidValidate(val);
+
 export const walletRepo = {
   async getOrCreateWallet(userId) {
-    if (dbPool) {
+    if (dbPool && isUuid(userId)) {
       try {
         const { rows } = await dbPool.query(
           `INSERT INTO wallets (user_id, balance, currency)
@@ -30,7 +32,7 @@ export const walletRepo = {
     let wallet = memoryStore.wallets.find((w) => w.user_id === userId);
     if (!wallet) {
       wallet = {
-        id: uuidv4(),
+        id: isUuid(userId) ? uuidv4() : `wal-${userId}`,
         user_id: userId,
         balance: 0.00,
         currency: 'USD',
@@ -43,6 +45,27 @@ export const walletRepo = {
   },
 
   async getTransactions(userId, { page = 1, limit = 20 } = {}) {
+    if (dbPool && isUuid(userId)) {
+      try {
+        const offset = (page - 1) * limit;
+        const countRes = await dbPool.query(
+          'SELECT COUNT(*) FROM wallet_transactions WHERE user_id = $1',
+          [userId]
+        );
+        const total = parseInt(countRes.rows[0].count, 10);
+        const { rows } = await dbPool.query(
+          `SELECT * FROM wallet_transactions 
+           WHERE user_id = $1 
+           ORDER BY created_at DESC 
+           LIMIT $2 OFFSET $3`,
+          [userId, limit, offset]
+        );
+        return { items: rows, total, page, limit };
+      } catch (err) {
+        logger.debug('dbPool getTransactions fallback:', err.message);
+      }
+    }
+
     const list = memoryStore.wallet_transactions
       .filter((tx) => tx.user_id === userId)
       .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
@@ -62,17 +85,27 @@ export const walletRepo = {
     description = null,
     createdBy = null
   }) {
-    // If PostgreSQL pool is available, use stored procedure
-    if (dbPool) {
+    const safeUserId = isUuid(userId) ? userId : null;
+    const safeOrderId = isUuid(orderId) ? orderId : null;
+    const safePaymentId = isUuid(paymentId) ? paymentId : null;
+    const safeCreatedBy = isUuid(createdBy) ? createdBy : null;
+    const delta = Number(amount);
+
+    let dbResult = null;
+
+    // 1. Try PostgreSQL stored procedure if valid UUID
+    if (dbPool && safeUserId) {
       const client = await dbPool.connect();
       try {
         await client.query('BEGIN');
         const { rows } = await client.query(
           'SELECT * FROM adjust_wallet_balance($1, $2, $3, $4, $5, $6, $7, $8)',
-          [userId, amount, type, orderId, paymentId, reference, description, createdBy]
+          [safeUserId, delta, type, safeOrderId, safePaymentId, reference, description, safeCreatedBy]
         );
         await client.query('COMMIT');
-        return rows[0];
+        if (rows && rows.length > 0) {
+          dbResult = rows[0];
+        }
       } catch (err) {
         await client.query('ROLLBACK');
         logger.error('PostgreSQL adjust_wallet_balance error:', err.message);
@@ -82,14 +115,17 @@ export const walletRepo = {
       }
     }
 
-    // Atomic in-memory balance adjustment
+    // 2. Synchronize in-memory cache and handle non-DB environments
     const wallet = await this.getOrCreateWallet(userId);
-    const balanceBefore = Number(wallet.balance);
-    const delta = Number(amount);
-    const balanceAfter = Number((balanceBefore + delta).toFixed(2));
+    const balanceBefore = Number(wallet.balance || 0);
+    const balanceAfter = dbResult
+      ? Number(dbResult.new_balance)
+      : Number((balanceBefore + delta).toFixed(2));
 
-    if (balanceAfter < 0) {
-      throw new Error(`INSUFFICIENT_FUNDS: Current balance is $${balanceBefore.toFixed(2)}, cannot debit $${Math.abs(delta).toFixed(2)}`);
+    if (!dbResult && balanceAfter < 0) {
+      throw new Error(
+        `INSUFFICIENT_FUNDS: Current balance is $${balanceBefore.toFixed(2)}, cannot debit $${Math.abs(delta).toFixed(2)}`
+      );
     }
 
     wallet.balance = balanceAfter;
@@ -103,8 +139,8 @@ export const walletRepo = {
     }
 
     const tx = {
-      id: uuidv4(),
-      wallet_id: wallet.id,
+      id: dbResult?.transaction_id || uuidv4(),
+      wallet_id: dbResult?.wallet_id || wallet.id,
       user_id: userId,
       type,
       amount: delta,
