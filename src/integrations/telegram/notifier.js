@@ -164,10 +164,10 @@ function formatDetailsHtml(details) {
  * Notify Admin chat for key store events (New order, Stock warning, Stock error)
  */
 export async function notifyAdmin(title, details) {
-  if (!ENV.TELEGRAM_ADMIN_CHAT_ID) return;
+  if (!ENV.TELEGRAM_ADMIN_CHAT_ID && !ENV.TELEGRAM_REPORT_CHANNEL_ID) return;
 
   const formattedDetails = formatDetailsHtml(details);
-  const message = `🔔 <b>ADMIN ALERT: ${escapeHtml(title)}</b>\n\n` +
+  const message = `🔔 <b>MAISER STORE: ${escapeHtml(title)}</b>\n\n` +
     (formattedDetails ? `${formattedDetails}\n\n` : '') +
     `⏱ <i>${new Date().toLocaleString('en-US', { timeZone: 'Asia/Phnom_Penh' })} (Phnom Penh)</i>`;
 
@@ -183,7 +183,15 @@ export async function notifyAdmin(title, details) {
     ]
   } : undefined;
 
-  await sendTelegramMessage(ENV.TELEGRAM_ADMIN_CHAT_ID, message, { replyMarkup });
+  // 1. Post to Report Channel / Supergroup (-1003823688631)
+  if (ENV.TELEGRAM_REPORT_CHANNEL_ID) {
+    await sendTelegramMessage(ENV.TELEGRAM_REPORT_CHANNEL_ID, message, { replyMarkup });
+  }
+
+  // 2. Post to Admin Private Chat (7789859191)
+  if (ENV.TELEGRAM_ADMIN_CHAT_ID && String(ENV.TELEGRAM_ADMIN_CHAT_ID) !== String(ENV.TELEGRAM_REPORT_CHANNEL_ID)) {
+    await sendTelegramMessage(ENV.TELEGRAM_ADMIN_CHAT_ID, message, { replyMarkup });
+  }
 }
 
 function escapeHtml(str) {

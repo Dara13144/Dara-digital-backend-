@@ -38,8 +38,9 @@ export const ENV = {
 
   // Telegram
   TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN || '',
-  TELEGRAM_BOT_USERNAME: process.env.TELEGRAM_BOT_USERNAME || 'DaraDigital_bot',
-  TELEGRAM_ADMIN_CHAT_ID: process.env.TELEGRAM_ADMIN_CHAT_ID || '',
+  TELEGRAM_BOT_USERNAME: process.env.TELEGRAM_BOT_USERNAME || 'Maiser_report_bot',
+  TELEGRAM_ADMIN_CHAT_ID: process.env.TELEGRAM_ADMIN_CHAT_ID || '7789859191',
+  TELEGRAM_REPORT_CHANNEL_ID: process.env.TELEGRAM_REPORT_CHANNEL_ID || '-1003823688631',
   TELEGRAM_MINI_APP_URL: process.env.TELEGRAM_MINI_APP_URL || 'http://localhost:5173',
 
   // ABA PayWay

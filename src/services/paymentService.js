@@ -212,11 +212,12 @@ export const paymentService = {
       await notifyBalanceTopUp(user.telegram_id, payment.amount, walletTx.balance_after);
     }
 
-    // Notify Admin
-    await notifyAdmin('Wallet Balance Top-Up', {
-      user: `@${user.username || user.telegram_id}`,
-      amount: `$${Number(payment.amount).toFixed(2)}`,
-      new_balance: `$${Number(walletTx.balance_after).toFixed(2)}`
+    // Notify Admin & Supergroup
+    await notifyAdmin('💰 Wallet Balance Top-Up', {
+      user: user?.email || (user?.username ? `@${user.username}` : user?.first_name || 'Customer'),
+      amount: `+$${Number(payment.amount).toFixed(2)} USD`,
+      new_balance: `$${Number(walletTx.balance_after).toFixed(2)} USD`,
+      method: 'ABA KHQR (Bakong)'
     });
 
     return {
@@ -479,11 +480,14 @@ export const paymentService = {
         logger.info(`Customer does not have a linked telegram_id for Order #${order.order_number}. User ID: ${order.user_id}`);
       }
 
-      // Notify Admin
-      await notifyAdmin('New Order Completed', {
+      // Notify Admin & Supergroup
+      await notifyAdmin('🎉 New Order Completed & Paid', {
         order_number: order.order_number,
-        customer: `@${user?.username || user?.telegram_id}`,
-        total: `$${order.total_amount}`
+        customer: user?.email || (user?.username ? `@${user.username}` : user?.first_name || 'Customer'),
+        items: order.items?.map(it => `${it.product_name} (x${it.quantity})`).join(', ') || 'Digital Products',
+        topup_account: order.customer_notes || undefined,
+        total: `$${Number(order.total_amount).toFixed(2)} USD`,
+        payment_method: order.payment_method || 'ABA PayWay'
       });
 
       const completedOrder = await orderRepo.findById(order.id);
