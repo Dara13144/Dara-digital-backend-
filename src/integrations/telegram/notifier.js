@@ -94,7 +94,7 @@ export async function notifyBalanceTopUp(telegramId, amount, newBalance) {
     `➕ <b>Added:</b> +$${Number(amount).toFixed(2)} USD\n` +
     `💳 <b>New Wallet Balance:</b> $${Number(newBalance).toFixed(2)} USD\n` +
     `⚡ <b>Payment Method:</b> ABA KHQR Auto-Check\n\n` +
-    `<i>You can now use your wallet balance to checkout instantly on Dara Digital Store.</i>`;
+    `<i>You can now use your wallet balance to checkout instantly on Maiser Store.</i>`;
 
   const isHttps = typeof ENV.FRONTEND_URL === 'string' && ENV.FRONTEND_URL.startsWith('https://');
   const replyMarkup = isHttps ? {

@@ -35,7 +35,7 @@ export async function handleTelegramWebhook(update) {
   switch (command) {
     case '/start': {
       const welcomeText =
-        `👋 <b>សូមស្វាគមន៍មកកាន់ Dara Digital Store, ${from?.first_name || 'អតិថិជន'}!</b>\n\n` +
+        `👋 <b>សូមស្វាគមន៍មកកាន់ Maiser Store, ${from?.first_name || 'អតិថិជន'}!</b>\n\n` +
         `យើងខ្ញុំមានផ្ដល់ជូននូវសេវាកម្មឌីជីថលជាច្រើនដូចជា៖\n` +
         `• 🎮 Game Accounts & Keys (Roblox, Steam, PS5, Xbox)\n` +
         `• 🎁 Gift Cards & Top-ups (Apple, Google Play, Steam)\n` +
@@ -105,9 +105,9 @@ export async function handleTelegramWebhook(update) {
     case '/help':
     case '/support': {
       const supportText =
-        `💬 <b>Dara Digital Customer Support</b>\n\n` +
+        `💬 <b>Maiser Store Customer Support</b>\n\n` +
         `Need help with an order or product activation?\n` +
-        `• Contact Support Admin: <b>@DaraDigital_bot</b>\n` +
+        `• Contact Support Admin: <b>@MaiserStore_bot</b>\n` +
         `• Operating Hours: 24/7 Instant Delivery\n` +
         `• Guarantee: 100% genuine digital product guarantee`;
 
@@ -143,7 +143,7 @@ export async function handleTelegramWebhook(update) {
     }
 
     default:
-      await sendTelegramMessage(chatId, 'Use /start to open the Dara Digital Store Mini App or /help for assistance.');
+      await sendTelegramMessage(chatId, 'Use /start to open the Maiser Store Mini App or /help for assistance.');
       break;
   }
 }

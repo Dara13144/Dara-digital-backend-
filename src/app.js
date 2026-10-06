@@ -82,7 +82,7 @@ app.use('/api', apiRouter);
 // Root Welcome Endpoint
 app.get('/', (req, res) => {
   res.json({
-    name: 'Dara Digital Store API',
+    name: 'Maiser Store API',
     version: '1.0.0',
     status: 'online',
     docs: '/api/health'
