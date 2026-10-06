@@ -379,7 +379,7 @@ export const memoryStore = {
   admin_logs: [],
   audit_logs: [],
   settings: {
-    store_name: { en: 'Maiser Store', km: 'Maiser Store' },
+    store_name: { en: '𝑀𝑎𝑖𝑠𝑒𝑟 𝑆𝑡𝑜𝑟𝑒', km: '𝑀𝑎𝑖𝑠𝑒𝑟 𝑆𝑡𝑜𝑟𝑒' },
     store_currency: 'USD',
     support_telegram: '@MaiserStore_bot',
     maintenance_mode: false,
