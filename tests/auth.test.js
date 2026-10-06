@@ -31,4 +31,21 @@ describe('Authentication & Telegram Verification Tests', () => {
     const result = verifyTelegramInitData('invalid_data=123&hash=abc', 'some_token');
     expect(result).toBeNull();
   });
+
+  it('should authenticate and register customer using Google Auth', async () => {
+    const res = await request(app)
+      .post('/api/auth/google')
+      .send({
+        email: 'customer.test@gmail.com',
+        name: 'Alex Johnson',
+        picture: 'https://lh3.googleusercontent.com/a/test-avatar',
+        sub: 'google_sub_123456789'
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.token).toBeDefined();
+    expect(res.body.data.user.email).toBe('customer.test@gmail.com');
+    expect(res.body.data.user.first_name).toBe('Alex Johnson');
+  });
 });

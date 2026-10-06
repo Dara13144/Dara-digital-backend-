@@ -92,6 +92,23 @@ export const userRepo = {
     if (!email) return null;
     const normalized = email.trim().toLowerCase();
 
+    if (dbPool) {
+      try {
+        const { rows } = await dbPool.query('SELECT * FROM users WHERE LOWER(email) = $1', [normalized]);
+        if (rows.length > 0) {
+          const u = rows[0];
+          const isAdmin = String(u.telegram_id) === '8361673413' ||
+            String(u.telegram_id) === String(ENV.TELEGRAM_ADMIN_CHAT_ID) ||
+            u.username === 'darazzdev' ||
+            (Boolean(ENV.ADMIN_EMAILS) && ENV.ADMIN_EMAILS.includes(normalized));
+          u.roles = isAdmin ? ['SUPER_ADMIN', 'ADMIN', 'USER'] : ['USER'];
+          return u;
+        }
+      } catch (err) {
+        logger.debug('dbPool findByEmail error, falling back:', err.message);
+      }
+    }
+
     if (isSupabaseConfigured()) {
       try {
         const { data, error } = await supabaseAdmin
@@ -112,15 +129,17 @@ export const userRepo = {
     return memoryStore.users.find((u) => u.email?.toLowerCase() === normalized) || null;
   },
 
-  async createOrUpdateGoogleUser({ email, name, picture, googleId, forceAdmin = true }) {
+  async createOrUpdateGoogleUser({ email, name, picture, googleId, forceAdmin = false }) {
     const normalizedEmail = email ? email.trim().toLowerCase() : null;
-    const existing = (normalizedEmail ? await this.findByEmail(normalizedEmail) : null) ||
-      memoryStore.users.find((u) => u.username === 'darazzdev' || String(u.telegram_id) === '8361673413');
+    if (!normalizedEmail) {
+      throw new Error('Email is required for Google authentication');
+    }
 
+    const existing = await this.findByEmail(normalizedEmail);
     const now = new Date().toISOString();
 
     const isAdminEmail = normalizedEmail && (
-      ENV.ADMIN_EMAILS.includes(normalizedEmail) ||
+      (ENV.ADMIN_EMAILS && ENV.ADMIN_EMAILS.includes(normalizedEmail)) ||
       normalizedEmail.includes('admin') ||
       normalizedEmail.includes('darazzdev')
     );
@@ -131,12 +150,36 @@ export const userRepo = {
     if (existing) {
       const updated = {
         ...existing,
-        email: normalizedEmail || existing.email,
-        first_name: name || existing.first_name || 'Admin',
+        email: normalizedEmail,
+        first_name: name || existing.first_name || 'Google User',
         avatar_url: picture || existing.avatar_url,
         roles: isAdmin ? ['SUPER_ADMIN', 'ADMIN', 'USER'] : (existing.roles || ['USER']),
         updated_at: now
       };
+
+      if (dbPool) {
+        try {
+          const { rows } = await dbPool.query(
+            `UPDATE users
+             SET first_name = COALESCE($1, first_name),
+                 avatar_url = COALESCE($2, avatar_url),
+                 updated_at = NOW()
+             WHERE id = $3
+             RETURNING *`,
+            [updated.first_name, updated.avatar_url, existing.id]
+          );
+          if (rows.length > 0) {
+            const u = rows[0];
+            u.roles = updated.roles;
+            const index = memoryStore.users.findIndex((mem) => mem.id === u.id);
+            if (index !== -1) memoryStore.users[index] = u;
+            else memoryStore.users.push(u);
+            return u;
+          }
+        } catch (err) {
+          logger.debug('dbPool google user update error:', err.message);
+        }
+      }
 
       if (isSupabaseConfigured()) {
         try {
@@ -154,11 +197,12 @@ export const userRepo = {
       return updated;
     }
 
+    // New User Registration with Google
     const newUser = {
       id: uuidv4(),
-      telegram_id: 8361673413,
-      username: 'darazzdev',
-      first_name: name || 'Google Admin',
+      telegram_id: null,
+      username: normalizedEmail.split('@')[0],
+      first_name: name || 'Google User',
       last_name: null,
       avatar_url: picture || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
       email: normalizedEmail,
@@ -173,11 +217,31 @@ export const userRepo = {
       updated_at: now
     };
 
+    if (dbPool) {
+      try {
+        const { rows } = await dbPool.query(
+          `INSERT INTO users (id, email, username, first_name, avatar_url, balance, total_spent, order_count, status, language)
+           VALUES ($1, $2, $3, $4, $5, 0, 0, 0, 'active', 'en')
+           RETURNING *`,
+          [newUser.id, newUser.email, newUser.username, newUser.first_name, newUser.avatar_url]
+        );
+        if (rows.length > 0) {
+          const u = rows[0];
+          u.roles = roles;
+          const index = memoryStore.users.findIndex((mem) => mem.id === u.id);
+          if (index !== -1) memoryStore.users[index] = u;
+          else memoryStore.users.push(u);
+          return u;
+        }
+      } catch (err) {
+        logger.debug('dbPool google user insert error:', err.message);
+      }
+    }
+
     if (isSupabaseConfigured()) {
       try {
         await supabaseAdmin.from('users').insert({
           id: newUser.id,
-          telegram_id: newUser.telegram_id,
           username: newUser.username,
           first_name: newUser.first_name,
           avatar_url: newUser.avatar_url,

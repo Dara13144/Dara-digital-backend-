@@ -120,7 +120,7 @@ export const authService = {
       name: googleUser.name,
       picture: googleUser.picture,
       googleId: googleUser.sub,
-      forceAdmin: true
+      forceAdmin: false
     });
 
     if (user.status === 'banned') {
