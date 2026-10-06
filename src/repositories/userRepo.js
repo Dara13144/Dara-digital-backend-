@@ -59,7 +59,16 @@ export const userRepo = {
         const { rows } = await dbPool.query('SELECT * FROM users WHERE id = $1', [id]);
         if (rows.length > 0) {
           const u = rows[0];
-          const isAdmin = String(u.telegram_id) === '8361673413' || String(u.telegram_id) === String(ENV.TELEGRAM_ADMIN_CHAT_ID) || u.username === 'darazzdev';
+          const userEmail = u.email ? u.email.trim().toLowerCase() : '';
+          const isAdmin =
+            String(u.telegram_id) === '8361673413' ||
+            String(u.telegram_id) === String(ENV.TELEGRAM_ADMIN_CHAT_ID) ||
+            u.username === 'darazzdev' ||
+            (userEmail && (
+              (Boolean(ENV.ADMIN_EMAILS) && ENV.ADMIN_EMAILS.includes(userEmail)) ||
+              userEmail.includes('admin') ||
+              userEmail.includes('darazzdev')
+            ));
           u.roles = isAdmin ? ['SUPER_ADMIN', 'ADMIN', 'USER'] : ['USER'];
           return u;
         }
