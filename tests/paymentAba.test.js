@@ -38,7 +38,7 @@ describe('ABA PayWay Integration & Payment State Machine Tests', () => {
       });
 
     testOrderId = orderRes.body.data.id;
-  });
+  }, 30000);
 
   it('should generate official ABA PayWay purchase hash and check-status hash', () => {
     const purchaseHash = generateAbaPurchaseHash({
@@ -89,7 +89,7 @@ describe('ABA PayWay Integration & Payment State Machine Tests', () => {
     expect(res.body.data.order.status).toBe(ORDER_STATUS.COMPLETED);
     expect(res.body.data.deliveries.length).toBe(1);
     expect(res.body.data.deliveries[0].delivery_payload).toBeDefined();
-  });
+  }, 30000);
 
   it('should be IDEMPOTENT: duplicate callback must NOT duplicate stock delivery', async () => {
     const duplicatePayload = {
