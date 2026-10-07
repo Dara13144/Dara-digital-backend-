@@ -52,6 +52,51 @@ export async function sendTelegramMessage(chatId, text, options = {}) {
     logger.error(`Failed to send Telegram message to ${chatId}:`, err.response?.data || err.message);
     return false;
   }
+/**
+ * Parses Roblox username, display name, and player ID from order customer notes
+ */
+export function parseRobloxDetails(customerNotes) {
+  if (!customerNotes) return null;
+  const str = String(customerNotes);
+
+  let username = null;
+  let displayName = null;
+  let playerId = null;
+
+  // Pattern: "Roblox Player: DisplayName (@Username) | ID: 123456789 | Package: ..."
+  const matchFull = str.match(/Roblox(?:\s+Player)?:\s*(.*?)\s*\(@([a-zA-Z0-9_]+)\)\s*\|\s*ID:\s*(\d+)/i);
+  if (matchFull) {
+    displayName = matchFull[1].trim();
+    username = matchFull[2].trim();
+    playerId = matchFull[3].trim();
+  } else {
+    // Pattern: "Roblox: DisplayName (@Username) | ID: 123456789"
+    const matchSimple = str.match(/@([a-zA-Z0-9_]+)/);
+    if (matchSimple) username = matchSimple[1].trim();
+
+    const matchId = str.match(/ID:\s*(\d+)/i);
+    if (matchId) playerId = matchId[1].trim();
+
+    const matchPlayer = str.match(/Roblox.*?: (.*?)(\||$)/i);
+    if (matchPlayer && !displayName) displayName = matchPlayer[1].replace(/@.*$/, '').trim();
+  }
+
+  return { username, displayName, playerId, raw: str };
+}
+
+/**
+ * Returns package tag / badge based on GamePass title
+ */
+export function getGamepassBadge(productName = '') {
+  const lower = productName.toLowerCase();
+  if (lower.includes('2x mastery')) return '🔥 Best Seller';
+  if (lower.includes('2x money')) return '⚡ Hot Deal';
+  if (lower.includes('dark blade') || lower.includes('yoru')) return '🗡️ Mythical';
+  if (lower.includes('fast boats') || lower.includes('luxury')) return '🌟 Popular';
+  if (lower.includes('2x boss') || lower.includes('2x drops')) return '✨ Special';
+  if (lower.includes('+1 fruit') || lower.includes('+1 storage')) return '💎 Best Value';
+  if (lower.includes('fruit notifier') || lower.includes('notifier')) return '👑 VIP / Ultra';
+  return '🎮 GamePass';
 }
 
 /**
@@ -93,6 +138,7 @@ export async function notifyPaymentCompleted({
   const robloxName = order?.customer_notes || user?.roblox_username || null;
   const totalAmount = Number(order?.total_amount || payment?.amount || 0).toFixed(2);
   const currency = order?.currency || payment?.currency || 'USD';
+  const priceInKhr = Math.round(Number(totalAmount) * 4100).toLocaleString();
 
   const isGamepassOrder = Boolean(
     order?.customer_notes?.toLowerCase().includes('gamepass') ||
@@ -115,34 +161,91 @@ export async function notifyPaymentCompleted({
     )
   );
 
-  const headerTitle = isGamepassOrder
-    ? `🎮 <b>GAMEPASS TOP-UP ORDER SUCCESSFUL!</b>`
-    : isTopUpOrder
+  let message = '';
+  let replyMarkup = undefined;
+  const isHttps = typeof ENV.FRONTEND_URL === 'string' && ENV.FRONTEND_URL.startsWith('https://');
+
+  if (isGamepassOrder) {
+    const robloxInfo = parseRobloxDetails(robloxName);
+    const robloxUsername = robloxInfo?.username || (robloxInfo?.displayName ? robloxInfo.displayName : robloxName);
+    const robloxId = robloxInfo?.playerId;
+    const profileUrl = robloxId ? `https://www.roblox.com/users/${robloxId}/profile` : null;
+
+    let gamepassItemsText = '';
+    if (items && items.length > 0) {
+      gamepassItemsText = items.map(it => {
+        const title = it.product_name || it.name || 'Blox Fruits GamePass';
+        const badge = getGamepassBadge(title);
+        const qty = it.quantity || 1;
+        const itemPrice = Number(it.unit_price || it.price || totalAmount).toFixed(2);
+        const itemKhr = Math.round(Number(itemPrice) * 4100).toLocaleString();
+        return `🎮 <b>${escapeHtml(title)}</b> (x${qty})\n` +
+               `   • 🏷️ <b>Badge / Tag:</b> <code>[${badge}]</code>\n` +
+               `   • 💵 <b>Package Price:</b> $${itemPrice} USD (≈ ${itemKhr} ៛)\n` +
+               `   • ⏱️ <b>Delivery Window:</b> 1h - 24h`;
+      }).join('\n\n');
+    } else {
+      gamepassItemsText = `🎮 <b>Blox Fruits GamePass</b>\n   • 🏷️ <b>Tag:</b> <code>[🎮 GamePass]</code>`;
+    }
+
+    message =
+      `🎮 <b>GAMEPASS TOP-UP ORDER SUCCESSFUL!</b>\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `🧾 <b>GamePass Order ID:</b> <code>#${escapeHtml(order?.order_number || payment?.transaction_id)}</code>\n` +
+      `👤 <b>Customer:</b> ${escapeHtml(customerName)}\n` +
+      `💰 <b>Total Paid:</b> <b>$${totalAmount} USD</b> (≈ ${priceInKhr} ៛)\n` +
+      `⚡ <b>Payment Method:</b> ${escapeHtml(paymentMethod)}\n` +
+      `⏱️ <b>Delivery Window:</b> <b>1 Hour - 24 Hours (1h - 24h)</b> <i>[១ ម៉ោង - ២៤ ម៉ោង]</i>\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `🎯 <b>ROBLOX TARGET PLAYER:</b>\n` +
+      (robloxUsername ? `👤 <b>Username:</b> <code>@${escapeHtml(robloxUsername)}</code>\n` : '') +
+      (robloxInfo?.displayName ? `🏷️ <b>Display Name:</b> <code>${escapeHtml(robloxInfo.displayName)}</code>\n` : '') +
+      (robloxId ? `🆔 <b>Player ID:</b> <code>${escapeHtml(robloxId)}</code>\n` : '') +
+      (profileUrl ? `🔗 <b>Profile Link:</b> <a href="${profileUrl}">View Roblox Profile</a>\n` : '') +
+      `━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `🛍️ <b>PURCHASED GAMEPASS ITEM:</b>\n` +
+      `${gamepassItemsText}\n\n` +
+      `⏳ <b>Status:</b> <i>Payment confirmed. GamePass gift/trade scheduled. Delivery completed within 1 - 24 hours.</i>\n\n` +
+      `👉 <b>STORE ADMIN ACTION:</b>\n` +
+      `<i>Please deliver/gift this GamePass to @${escapeHtml(robloxUsername || 'target player')} on Roblox.</i>\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `⏱ <i>${new Date().toLocaleString('en-US', { timeZone: 'Asia/Phnom_Penh' })} (Phnom Penh)</i>\n` +
+      `🤖 <i>Auto-reported by @Maiser_report_bot</i>`;
+
+    const buttons = [];
+    if (profileUrl) {
+      buttons.push({ text: '🎮 Open Roblox Profile', url: profileUrl });
+    }
+    if (isHttps) {
+      buttons.push({ text: '⚡ Open Store', web_app: { url: ENV.FRONTEND_URL } });
+    }
+    if (buttons.length > 0) {
+      replyMarkup = { inline_keyboard: [buttons] };
+    }
+  } else {
+    const headerTitle = isTopUpOrder
       ? `⚡ <b>USER TOP-UP SUCCESSFUL!</b>`
       : `🎉 <b>Payment Done & Order Delivered!</b>`;
 
-  const deliveryWindowLine = isGamepassOrder
-    ? `⏱️ <b>Delivery Window:</b> <b>1 Hour - 24 Hours (1h - 24h)</b> <i>[១ ម៉ោង - ២៤ ម៉ោង]</i>\n`
-    : `⚡ <b>Delivery Speed:</b> Instant Automated Delivery\n`;
+    const deliveryWindowLine = isTopUpOrder
+      ? `⚡ <b>Delivery Speed:</b> Instant Automated Delivery\n`
+      : `⚡ <b>Delivery Speed:</b> Instant Automated Delivery\n`;
 
-  // Consolidated single Telegram message
-  const message =
-    `${headerTitle}\n\n` +
-    `🧾 <b>${isGamepassOrder ? 'GamePass Order ID' : (isTopUpOrder ? 'Top-Up Order ID' : 'Order ID')}:</b> <code>#${escapeHtml(order?.order_number || payment?.transaction_id)}</code>\n` +
-    `👤 <b>Customer:</b> ${escapeHtml(customerName)}\n` +
-    (robloxName ? `🎮 <b>Roblox / Player ID:</b> <code>${escapeHtml(robloxName)}</code>\n` : '') +
-    `💰 <b>Total Paid:</b> <b>$${totalAmount} ${escapeHtml(currency)}</b>\n` +
-    `⚡ <b>Payment Method:</b> ${escapeHtml(paymentMethod)}\n` +
-    deliveryWindowLine +
-    `\n🛍️ <b>${isGamepassOrder ? 'GamePass Package' : (isTopUpOrder ? 'Top-Up Package' : 'Items')}:</b>\n${itemsText}\n` +
-    (isGamepassOrder ? `\n⏳ <b>Status:</b> <i>GamePass gift/trade scheduled. Delivery completed within 1 - 24 hours.</i>\n` : '') +
-    (deliveryDetailsText ? `\n🔐 <b>Instant Delivery (Tap to Copy):</b>${deliveryDetailsText}\n` : '') +
-    `\n⏱ <i>${new Date().toLocaleString('en-US', { timeZone: 'Asia/Phnom_Penh' })} (Phnom Penh)</i>\n` +
-    `🤖 <i>Delivered automatically by @Maiser_report_bot</i>`;
+    message =
+      `${headerTitle}\n\n` +
+      `🧾 <b>${isTopUpOrder ? 'Top-Up Order ID' : 'Order ID'}:</b> <code>#${escapeHtml(order?.order_number || payment?.transaction_id)}</code>\n` +
+      `👤 <b>Customer:</b> ${escapeHtml(customerName)}\n` +
+      (robloxName ? `🎮 <b>Roblox / Player ID:</b> <code>${escapeHtml(robloxName)}</code>\n` : '') +
+      `💰 <b>Total Paid:</b> <b>$${totalAmount} ${escapeHtml(currency)}</b> (≈ ${priceInKhr} ៛)\n` +
+      `⚡ <b>Payment Method:</b> ${escapeHtml(paymentMethod)}\n` +
+      deliveryWindowLine +
+      `\n🛍️ <b>${isTopUpOrder ? 'Top-Up Package' : 'Items'}:</b>\n${itemsText}\n` +
+      (deliveryDetailsText ? `\n🔐 <b>Instant Delivery (Tap to Copy):</b>${deliveryDetailsText}\n` : '') +
+      `\n⏱ <i>${new Date().toLocaleString('en-US', { timeZone: 'Asia/Phnom_Penh' })} (Phnom Penh)</i>\n` +
+      `🤖 <i>Delivered automatically by @Maiser_report_bot</i>`;
 
-  const isHttps = typeof ENV.FRONTEND_URL === 'string' && ENV.FRONTEND_URL.startsWith('https://');
-  const replyMarkup = isHttps
-    ? {
+    if (isHttps) {
+      replyMarkup = {
         inline_keyboard: [
           [
             {
@@ -151,8 +254,9 @@ export async function notifyPaymentCompleted({
             }
           ]
         ]
-      }
-    : undefined;
+      };
+    }
+  }
 
   // 1. Send strictly ONE message to Telegram Group / Channel
   if (ENV.TELEGRAM_REPORT_CHANNEL_ID) {
@@ -259,12 +363,22 @@ export async function notifyOrderDelivered(telegramId, order, items = [], delive
     ? 'GamePass Delivery Window: 1 - 24 Hours (១ ម៉ោង - ២៤ ម៉ោង)'
     : 'Instant Automated Delivery';
 
+  let gamepassItemsList = '';
+  if (isGamepass && items && items.length > 0) {
+    gamepassItemsList = items.map(it => {
+      const title = it.product_name || it.name || 'GamePass Package';
+      const badge = getGamepassBadge(title);
+      return `• 🎮 <b>${escapeHtml(title)}</b> <code>[${badge}]</code> (x${it.quantity || 1})`;
+    }).join('\n');
+  }
+
   const message =
     `🎉 <b>${isGamepass ? 'GamePass Order Confirmed!' : 'Order Delivered Successfully!'}</b>\n\n` +
     `🧾 <b>Order ID:</b> <code>#${escapeHtml(order.order_number)}</code>\n` +
     `💰 <b>Total Paid:</b> <b>$${Number(order.total_amount).toFixed(2)} ${escapeHtml(order.currency || 'USD')}</b>\n` +
     `⏱️ <b>Delivery Status:</b> ${deliveryStatusText}\n` +
-    (isGamepass ? `🎮 <b>Roblox Target:</b> <code>${escapeHtml(order.customer_notes || 'Verified Player')}</code>\n\n` : '\n') +
+    (isGamepass && gamepassItemsList ? `\n🛍️ <b>GamePass Package:</b>\n${gamepassItemsList}\n` : '') +
+    (isGamepass ? `\n🎮 <b>Roblox Target:</b> <code>${escapeHtml(order.customer_notes || 'Verified Player')}</code>\n` : '') +
     (isGamepass 
       ? `⏳ <i>Your GamePass will be gifted/transferred to your Roblox account within 1 to 24 hours. Check your Roblox inventory / trades.</i>\n`
       : `🔐 <b>Your Purchased Account / Key (Tap to Copy):</b>\n${deliveryDetailsText}\n`) +
