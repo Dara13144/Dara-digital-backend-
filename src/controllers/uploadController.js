@@ -11,7 +11,7 @@ const __dirname = path.dirname(__filename);
 
 // Local uploads directories
 const localUploadsDir = path.resolve(__dirname, '../../public/uploads');
-const frontendUploadsDir = path.resolve(__dirname, '../../../../frontend/public/uploads');
+const frontendUploadsDir = path.resolve(__dirname, '../../../frontend/public/uploads');
 
 // Ensure local directories exist
 try {
@@ -106,10 +106,15 @@ export const uploadController = {
         const localFilePath = path.join(localUploadsDir, safeFilename);
         fs.writeFileSync(localFilePath, buffer);
 
-        // Also copy to frontend public directory if it exists
-        if (fs.existsSync(frontendUploadsDir)) {
+        // Also copy to frontend public directory if it exists or can be created
+        try {
+          if (!fs.existsSync(frontendUploadsDir)) {
+            fs.mkdirSync(frontendUploadsDir, { recursive: true });
+          }
           const frontendFilePath = path.join(frontendUploadsDir, safeFilename);
           fs.writeFileSync(frontendFilePath, buffer);
+        } catch (e) {
+          logger.warn('Could not write to frontend uploads dir:', e.message);
         }
 
         // If Supabase failed or offline, use local static URL

@@ -408,6 +408,9 @@ export const productRepo = {
             discount_price = EXCLUDED.discount_price,
             category_id = EXCLUDED.category_id,
             badge = EXCLUDED.badge,
+            images = EXCLUDED.images,
+            description = EXCLUDED.description,
+            instructions = EXCLUDED.instructions,
             updated_at = NOW()
           RETURNING *`,
           [
