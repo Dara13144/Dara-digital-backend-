@@ -52,6 +52,8 @@ export async function sendTelegramMessage(chatId, text, options = {}) {
     logger.error(`Failed to send Telegram message to ${chatId}:`, err.response?.data || err.message);
     return false;
   }
+}
+
 /**
  * Parses Roblox username, display name, and player ID from order customer notes
  */
