@@ -57,9 +57,9 @@ export const productRepo = {
         } else if (categoryId) {
           sql += ` AND p.category_id = $${pIndex++}`;
           params.push(categoryId);
-        } else {
-          // Do not show topup packages in the general store catalog
-          sql += ` AND (c.slug != 'topup' OR c.slug IS NULL)`;
+        } else if (publishedOnly) {
+          // Do not show topup & gamepass packages in the general store catalog for customers
+          sql += ` AND (c.slug NOT IN ('topup', 'gamepass') OR c.slug IS NULL)`;
         }
 
         if (search) {
@@ -143,11 +143,9 @@ export const productRepo = {
       }
     } else if (categoryId) {
       list = list.filter((p) => p.category_id === categoryId);
-    } else {
-      const topUpCat = memoryStore.categories.find((c) => c.slug === 'topup');
-      if (topUpCat) {
-        list = list.filter((p) => p.category_id !== topUpCat.id);
-      }
+    } else if (publishedOnly) {
+      const excludedCats = memoryStore.categories.filter((c) => ['topup', 'gamepass'].includes(c.slug)).map((c) => c.id);
+      list = list.filter((p) => !excludedCats.includes(p.category_id));
     }
 
     if (search) {

@@ -546,5 +546,61 @@ export const userRepo = {
     user.status = status;
     user.updated_at = new Date().toISOString();
     return user;
+  },
+
+  async updateUserAvatar(userId, avatarUrl) {
+    if (dbPool) {
+      try {
+        const { rows } = await dbPool.query(
+          'UPDATE users SET avatar_url = $1, updated_at = NOW() WHERE id = $2 RETURNING *',
+          [avatarUrl, userId]
+        );
+        if (rows.length > 0) {
+          const u = rows[0];
+          const mem = memoryStore.users.find((m) => m.id === userId);
+          if (mem) mem.avatar_url = avatarUrl;
+          return u;
+        }
+      } catch (err) {
+        logger.debug('dbPool updateUserAvatar fallback:', err.message);
+      }
+    }
+
+    if (isSupabaseConfigured()) {
+      try {
+        const { data } = await supabaseAdmin
+          .from('users')
+          .update({ avatar_url: avatarUrl, updated_at: new Date().toISOString() })
+          .eq('id', userId)
+          .select()
+          .single();
+        if (data) return data;
+      } catch (err) {
+        logger.debug('supabase updateUserAvatar fallback:', err.message);
+      }
+    }
+
+    const user = await this.findById(userId);
+    if (user) {
+      user.avatar_url = avatarUrl;
+      user.updated_at = new Date().toISOString();
+    }
+    return user;
+  },
+
+  async syncTelegramAvatar(userId) {
+    const user = await this.findById(userId);
+    if (!user || !user.telegram_id) return user;
+
+    try {
+      const avatarUrl = await fetchTelegramAvatarUrl(user.telegram_id);
+      if (avatarUrl && avatarUrl !== user.avatar_url) {
+        return await this.updateUserAvatar(userId, avatarUrl);
+      }
+    } catch (err) {
+      logger.debug('syncTelegramAvatar error:', err.message);
+    }
+
+    return user;
   }
 };

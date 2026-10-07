@@ -60,6 +60,12 @@ app.use(
 );
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+import path from 'path';
+import { fileURLToPath } from 'url';
+const __appFilename = fileURLToPath(import.meta.url);
+const __appDirname = path.dirname(__appFilename);
+app.use('/uploads', express.static(path.resolve(__appDirname, '../public/uploads')));
+
 // HTTP Request Logging
 const morganFormat = ENV.NODE_ENV === 'production' ? 'combined' : 'dev';
 app.use(

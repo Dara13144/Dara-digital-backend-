@@ -11,6 +11,7 @@ import { couponController } from '../controllers/couponController.js';
 import { adminController } from '../controllers/adminController.js';
 import { healthController } from '../controllers/healthController.js';
 import { robloxController } from '../controllers/robloxController.js';
+import { uploadController } from '../controllers/uploadController.js';
 import { handleTelegramWebhook } from '../integrations/telegram/bot.js';
 
 import { authenticate, optionalAuth } from '../middleware/authMiddleware.js';
@@ -51,6 +52,8 @@ router.get('/health', healthController.getHealth);
 router.get('/settings', adminController.getSettings);
 router.get('/roblox/check', robloxController.checkUser);
 router.get('/roblox/check/:username', robloxController.checkUser);
+router.post('/upload', uploadController.uploadImage);
+router.post('/upload/image', uploadController.uploadImage);
 router.post('/telegram/webhook', async (req, res) => {
   try {
     await handleTelegramWebhook(req.body);
