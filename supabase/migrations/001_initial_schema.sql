@@ -157,6 +157,8 @@ CREATE TABLE IF NOT EXISTS products (
     published BOOLEAN NOT NULL DEFAULT true,
     rating NUMERIC(3, 2) NOT NULL DEFAULT 5.00,
     instructions TEXT,
+    badge VARCHAR(100),
+    image_url TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
