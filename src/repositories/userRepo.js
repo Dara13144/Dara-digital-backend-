@@ -64,11 +64,7 @@ export const userRepo = {
             String(u.telegram_id) === '8361673413' ||
             String(u.telegram_id) === String(ENV.TELEGRAM_ADMIN_CHAT_ID) ||
             u.username === 'darazzdev' ||
-            (userEmail && (
-              (Boolean(ENV.ADMIN_EMAILS) && ENV.ADMIN_EMAILS.includes(userEmail)) ||
-              userEmail.includes('admin') ||
-              userEmail.includes('darazzdev')
-            ));
+            (userEmail && Boolean(ENV.ADMIN_EMAILS) && ENV.ADMIN_EMAILS.includes(userEmail));
           u.roles = isAdmin ? ['SUPER_ADMIN', 'ADMIN', 'USER'] : ['USER'];
           return u;
         }
@@ -108,7 +104,6 @@ export const userRepo = {
           const u = rows[0];
           const isAdmin = String(u.telegram_id) === '8361673413' ||
             String(u.telegram_id) === String(ENV.TELEGRAM_ADMIN_CHAT_ID) ||
-            u.username === 'darazzdev' ||
             (Boolean(ENV.ADMIN_EMAILS) && ENV.ADMIN_EMAILS.includes(normalized));
           u.roles = isAdmin ? ['SUPER_ADMIN', 'ADMIN', 'USER'] : ['USER'];
           return u;
@@ -147,11 +142,7 @@ export const userRepo = {
     const existing = await this.findByEmail(normalizedEmail);
     const now = new Date().toISOString();
 
-    const isAdminEmail = normalizedEmail && (
-      (ENV.ADMIN_EMAILS && ENV.ADMIN_EMAILS.includes(normalizedEmail)) ||
-      normalizedEmail.includes('admin') ||
-      normalizedEmail.includes('darazzdev')
-    );
+    const isAdminEmail = Boolean(normalizedEmail && ENV.ADMIN_EMAILS && ENV.ADMIN_EMAILS.includes(normalizedEmail));
 
     const isAdmin = forceAdmin || Boolean(isAdminEmail);
     const roles = isAdmin ? ['SUPER_ADMIN', 'ADMIN', 'USER'] : ['USER'];

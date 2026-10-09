@@ -10,7 +10,7 @@ export const memoryStore = {
       first_name: 'Dara',
       last_name: 'Admin',
       avatar_url: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
-      email: 'admin@daradigital.store',
+      email: 'bunrak778@gmail.com',
       phone: '+85512345678',
       balance: 0.00,
       total_spent: 0.00,

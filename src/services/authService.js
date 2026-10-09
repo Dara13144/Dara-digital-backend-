@@ -148,8 +148,15 @@ export const authService = {
       }
     }
 
-    if (!googleUser.email && !googleUser.name) {
-      throw new Error('GOOGLE_AUTH_FAILED: Missing email or user details from Google authentication.');
+    const normalizedEmail = (googleUser.email || '').trim().toLowerCase();
+    const isAuthorizedAdmin = Boolean(
+      normalizedEmail &&
+      ENV.ADMIN_EMAILS &&
+      ENV.ADMIN_EMAILS.includes(normalizedEmail)
+    );
+
+    if (!isAuthorizedAdmin) {
+      throw new Error(`UNAUTHORIZED: Email "${googleUser.email}" is not authorized for Admin access.`);
     }
 
     const user = await userRepo.createOrUpdateGoogleUser({
@@ -157,7 +164,7 @@ export const authService = {
       name: googleUser.name,
       picture: googleUser.picture,
       googleId: googleUser.sub,
-      forceAdmin: false
+      forceAdmin: true
     });
 
     if (user.status === 'banned') {
