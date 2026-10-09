@@ -125,6 +125,69 @@ export function parseRobloxDetails(customerNotes) {
 }
 
 /**
+ * Comprehensive customer username and identity resolver
+ * Guarantees that the username of the user is always clearly extracted & formatted.
+ */
+export function formatCustomerIdentity(user, order = null) {
+  if (!user && !order) {
+    return {
+      usernameTag: '@customer',
+      usernameOnly: 'customer',
+      displayName: 'Customer',
+      email: null,
+      telegramId: null,
+      robloxUsername: null,
+      summaryLine: '👤 <b>Customer Username:</b> <code>@customer</code>'
+    };
+  }
+
+  // 1. Raw user account username
+  let rawUsername = user?.username ? String(user.username).trim() : null;
+  if (rawUsername) {
+    rawUsername = rawUsername.replace(/^@+/, '');
+  } else if (user?.email) {
+    rawUsername = String(user.email).split('@')[0].trim();
+  }
+
+  // 2. Roblox player username if available
+  const robloxInfo = parseRobloxDetails(order?.customer_notes || user?.roblox_username);
+  const robloxUsername = robloxInfo?.username ? robloxInfo.username.replace(/^@+/, '') : (user?.roblox_username ? String(user.roblox_username).replace(/^@+/, '') : null);
+
+  // 3. Fallback
+  if (!rawUsername) {
+    if (robloxUsername) {
+      rawUsername = robloxUsername;
+    } else if (user?.first_name) {
+      rawUsername = user.first_name.replace(/\s+/g, '_').toLowerCase();
+    } else {
+      rawUsername = 'customer';
+    }
+  }
+
+  const usernameTag = `@${rawUsername}`;
+  const displayName = [user?.first_name, user?.last_name].filter(Boolean).join(' ') || user?.name || null;
+  const email = user?.email || null;
+  const telegramId = user?.telegram_id ? String(user.telegram_id) : null;
+
+  // Build prominent summary line
+  let summaryLine = `👤 <b>Customer Username:</b> <b>${escapeHtml(usernameTag)}</b>`;
+  if (displayName && displayName.toLowerCase() !== rawUsername.toLowerCase()) {
+    summaryLine += ` (<i>${escapeHtml(displayName)}</i>)`;
+  }
+
+  return {
+    usernameTag,
+    usernameOnly: rawUsername,
+    displayName,
+    email,
+    telegramId,
+    robloxUsername,
+    robloxInfo,
+    summaryLine
+  };
+}
+
+/**
  * Returns package tag / badge based on GamePass title
  */
 export function getGamepassBadge(productName = '') {
@@ -168,18 +231,10 @@ export async function notifyOrderCreated({ order, user, items = [], paymentMetho
   if (isNotificationAlreadySent(dedupKey)) return false;
   markNotificationSent(dedupKey);
 
-  const customerName = user?.email || (user?.username ? `@${user.username}` : user?.first_name || 'Customer');
+  const identity = formatCustomerIdentity(user, order);
   const totalAmount = Number(order?.total_amount || 0).toFixed(2);
   const currency = order?.currency || 'USD';
   const priceInKhr = Math.round(Number(totalAmount) * 4100).toLocaleString();
-
-  const isGamepassOrder = Boolean(
-    order?.customer_notes?.toLowerCase().includes('gamepass') ||
-    items?.some(it => (it.product_name || it.name || '').toLowerCase().includes('gamepass'))
-  );
-
-  const robloxInfo = parseRobloxDetails(order?.customer_notes);
-  const robloxUsername = robloxInfo?.username || (robloxInfo?.displayName ? robloxInfo.displayName : null);
 
   const itemsText = items && items.length > 0
     ? items.map(it => `• ${escapeHtml(it.product_name || it.name || 'Product')} (x${it.quantity || 1}) - $${Number(it.unit_price || it.price || 0).toFixed(2)}`).join('\n')
@@ -189,8 +244,10 @@ export async function notifyOrderCreated({ order, user, items = [], paymentMetho
     `🛒 <b>NEW ORDER CREATED (PENDING PAYMENT)</b>\n` +
     `━━━━━━━━━━━━━━━━━━━━━━━━\n` +
     `🧾 <b>Order ID:</b> <code>#${escapeHtml(order?.order_number)}</code>\n` +
-    `👤 <b>Customer:</b> ${escapeHtml(customerName)}\n` +
-    (robloxUsername ? `🎮 <b>Roblox Target:</b> <code>@${escapeHtml(robloxUsername)}</code>\n` : '') +
+    `${identity.summaryLine}\n` +
+    (identity.email ? `📧 <b>Email:</b> <code>${escapeHtml(identity.email)}</code>\n` : '') +
+    (identity.telegramId ? `🆔 <b>Telegram ID:</b> <code>${escapeHtml(identity.telegramId)}</code>\n` : '') +
+    (identity.robloxUsername ? `🎮 <b>Roblox Target Player:</b> <code>@${escapeHtml(identity.robloxUsername)}</code>\n` : '') +
     `💰 <b>Amount:</b> <b>$${totalAmount} ${escapeHtml(currency)}</b> (≈ ${priceInKhr} ៛)\n` +
     `⚡ <b>Payment Method:</b> ${escapeHtml(paymentMethod)}\n` +
     `⏳ <b>Status:</b> <i>Pending Customer Payment (QR Generated)</i>\n` +
@@ -223,6 +280,8 @@ export async function notifyPaymentCompleted({
   }
   markNotificationSent(dedupKey);
 
+  const identity = formatCustomerIdentity(user, order);
+
   // Digital accounts / keys delivery text
   let deliveryDetailsText = '';
   if (deliveries && deliveries.length > 0) {
@@ -238,8 +297,6 @@ export async function notifyPaymentCompleted({
     ? items.map(it => `• ${escapeHtml(it.product_name || it.name || 'Product')} (x${it.quantity || 1})`).join('\n')
     : 'Digital Products';
 
-  const customerName = user?.email || (user?.username ? `@${user.username}` : user?.first_name || 'Customer');
-  const robloxName = order?.customer_notes || user?.roblox_username || null;
   const totalAmount = Number(order?.total_amount || payment?.amount || 0).toFixed(2);
   const currency = order?.currency || payment?.currency || 'USD';
   const priceInKhr = Math.round(Number(totalAmount) * 4100).toLocaleString();
@@ -269,8 +326,8 @@ export async function notifyPaymentCompleted({
   let profileUrl = null;
 
   if (isGamepassOrder) {
-    const robloxInfo = parseRobloxDetails(robloxName);
-    const robloxUsername = robloxInfo?.username || (robloxInfo?.displayName ? robloxInfo.displayName : robloxName);
+    const robloxInfo = identity.robloxInfo;
+    const robloxUsername = identity.robloxUsername || robloxInfo?.username || identity.usernameOnly;
     const robloxId = robloxInfo?.playerId;
     profileUrl = robloxId ? `https://www.roblox.com/users/${robloxId}/profile` : null;
 
@@ -295,13 +352,14 @@ export async function notifyPaymentCompleted({
       `🎮 <b>GAMEPASS TOP-UP ORDER SUCCESSFUL!</b>\n` +
       `━━━━━━━━━━━━━━━━━━━━━━━━\n` +
       `🧾 <b>GamePass Order ID:</b> <code>#${escapeHtml(order?.order_number || payment?.transaction_id)}</code>\n` +
-      `👤 <b>Customer:</b> ${escapeHtml(customerName)}\n` +
+      `${identity.summaryLine}\n` +
+      (identity.email ? `📧 <b>Email:</b> <code>${escapeHtml(identity.email)}</code>\n` : '') +
       `💰 <b>Total Paid:</b> <b>$${totalAmount} USD</b> (≈ ${priceInKhr} ៛)\n` +
       `⚡ <b>Payment Method:</b> ${escapeHtml(paymentMethod)}\n` +
       `⏱️ <b>Delivery Window:</b> <b>1 Hour - 24 Hours (1h - 24h)</b> <i>[១ ម៉ោង - ២៤ ម៉ោង]</i>\n` +
       `━━━━━━━━━━━━━━━━━━━━━━━━\n` +
       `🎯 <b>ROBLOX TARGET PLAYER:</b>\n` +
-      (robloxUsername ? `👤 <b>Username:</b> <code>@${escapeHtml(robloxUsername)}</code>\n` : '') +
+      `👤 <b>Roblox Username:</b> <code>@${escapeHtml(robloxUsername)}</code>\n` +
       (robloxInfo?.displayName ? `🏷️ <b>Display Name:</b> <code>${escapeHtml(robloxInfo.displayName)}</code>\n` : '') +
       (robloxId ? `🆔 <b>Player ID:</b> <code>${escapeHtml(robloxId)}</code>\n` : '') +
       (profileUrl ? `🔗 <b>Profile Link:</b> <a href="${profileUrl}">View Roblox Profile</a>\n` : '') +
@@ -310,7 +368,7 @@ export async function notifyPaymentCompleted({
       `${gamepassItemsText}\n\n` +
       `⏳ <b>Status:</b> <i>Payment confirmed. GamePass gift/trade scheduled. Delivery completed within 1 - 24 hours.</i>\n\n` +
       `👉 <b>STORE ADMIN ACTION:</b>\n` +
-      `<i>Please deliver/gift this GamePass to @${escapeHtml(robloxUsername || 'target player')} on Roblox.</i>\n` +
+      `<i>Please deliver/gift this GamePass to @${escapeHtml(robloxUsername)} on Roblox.</i>\n` +
       `━━━━━━━━━━━━━━━━━━━━━━━━\n` +
       `⏱ <i>${getPhnomPenhTime()} (Phnom Penh)</i>\n` +
       `🤖 <i>Auto-reported by @Maiser_report_bot</i>`;
@@ -322,8 +380,10 @@ export async function notifyPaymentCompleted({
     message =
       `${headerTitle}\n\n` +
       `🧾 <b>${isTopUpOrder ? 'Top-Up Order ID' : 'Order ID'}:</b> <code>#${escapeHtml(order?.order_number || payment?.transaction_id)}</code>\n` +
-      `👤 <b>Customer:</b> ${escapeHtml(customerName)}\n` +
-      (robloxName ? `🎮 <b>Roblox / Player ID:</b> <code>${escapeHtml(robloxName)}</code>\n` : '') +
+      `${identity.summaryLine}\n` +
+      (identity.email ? `📧 <b>Email:</b> <code>${escapeHtml(identity.email)}</code>\n` : '') +
+      (identity.telegramId ? `🆔 <b>Telegram ID:</b> <code>${escapeHtml(identity.telegramId)}</code>\n` : '') +
+      (identity.robloxUsername ? `🎮 <b>Roblox Player / ID:</b> <code>@${escapeHtml(identity.robloxUsername)}</code>\n` : '') +
       `💰 <b>Total Paid:</b> <b>$${totalAmount} ${escapeHtml(currency)}</b> (≈ ${priceInKhr} ៛)\n` +
       `⚡ <b>Payment Method:</b> ${escapeHtml(paymentMethod)}\n` +
       `⚡ <b>Delivery Speed:</b> Instant Automated Delivery\n` +
@@ -359,14 +419,15 @@ export async function notifyPaymentFailed({ order, reason = 'Payment expired or 
   if (isNotificationAlreadySent(dedupKey)) return false;
   markNotificationSent(dedupKey);
 
-  const customerName = user?.email || (user?.username ? `@${user.username}` : user?.first_name || 'Customer');
+  const identity = formatCustomerIdentity(user, order);
   const amount = Number(order?.total_amount || 0).toFixed(2);
 
   const message =
     `⚠️ <b>PAYMENT FAILED / CANCELLED</b>\n` +
     `━━━━━━━━━━━━━━━━━━━━━━━━\n` +
     `🧾 <b>Order ID:</b> <code>#${escapeHtml(order?.order_number)}</code>\n` +
-    `👤 <b>Customer:</b> ${escapeHtml(customerName)}\n` +
+    `${identity.summaryLine}\n` +
+    (identity.email ? `📧 <b>Email:</b> <code>${escapeHtml(identity.email)}</code>\n` : '') +
     `💵 <b>Amount:</b> $${amount} USD\n` +
     `⚡ <b>Gateway:</b> ${escapeHtml(paymentMethod)}\n` +
     `❌ <b>Reason:</b> <code>${escapeHtml(reason)}</code>\n` +
@@ -391,11 +452,14 @@ export async function notifyWalletTopUpInitiated({ user, amount, method = 'ABA K
   if (isNotificationAlreadySent(dedupKey)) return false;
   markNotificationSent(dedupKey);
 
-  const customerName = user?.email || (user?.username ? `@${user.username}` : user?.first_name || 'Customer');
+  const identity = formatCustomerIdentity(user);
+
   const message =
     `💳 <b>WALLET TOP-UP INITIATED (KHQR GENERATED)</b>\n` +
     `━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-    `👤 <b>Customer:</b> ${escapeHtml(customerName)}\n` +
+    `${identity.summaryLine}\n` +
+    (identity.email ? `📧 <b>Email:</b> <code>${escapeHtml(identity.email)}</code>\n` : '') +
+    (identity.telegramId ? `🆔 <b>Telegram ID:</b> <code>${escapeHtml(identity.telegramId)}</code>\n` : '') +
     `➕ <b>Pending Amount:</b> <b>+$${Number(amount).toFixed(2)} USD</b>\n` +
     `⚡ <b>Method:</b> ${escapeHtml(method)}\n` +
     `⏳ <b>Status:</b> <i>Awaiting QR Scan & Bakong Confirmation</i>\n` +
@@ -419,10 +483,13 @@ export async function notifyWalletTopUpCompleted({
   }
   markNotificationSent(dedupKey);
 
-  const customerName = user?.email || (user?.username ? `@${user.username}` : user?.first_name || 'Customer');
+  const identity = formatCustomerIdentity(user);
+
   const message =
     `💰 <b>USER TOP-UP SUCCESSFUL (WALLET)!</b>\n\n` +
-    `👤 <b>Customer / User:</b> ${escapeHtml(customerName)}\n` +
+    `${identity.summaryLine}\n` +
+    (identity.email ? `📧 <b>Email:</b> <code>${escapeHtml(identity.email)}</code>\n` : '') +
+    (identity.telegramId ? `🆔 <b>Telegram ID:</b> <code>${escapeHtml(identity.telegramId)}</code>\n` : '') +
     `➕ <b>Top-Up Amount:</b> <b>+$${Number(amount).toFixed(2)} USD</b>\n` +
     `💳 <b>New Wallet Balance:</b> <b>$${Number(newBalance).toFixed(2)} USD</b>\n` +
     `⚡ <b>Payment Method:</b> ABA KHQR (Bakong)\n\n` +
@@ -460,7 +527,7 @@ export async function notifyUserAuth({ user, method = 'Google OAuth', isNewUser 
   }
   recentUserAuthSet.set(user.id, now);
 
-  const customerName = user.first_name || user.username || user.email || 'Customer';
+  const identity = formatCustomerIdentity(user);
   const roleBadges = Array.isArray(user.roles) ? user.roles.join(', ') : 'USER';
   const icon = isNewUser ? '🎉' : '👤';
   const title = isNewUser ? 'NEW USER REGISTRATION' : 'USER SIGNED IN';
@@ -468,9 +535,9 @@ export async function notifyUserAuth({ user, method = 'Google OAuth', isNewUser 
   const message =
     `${icon} <b>${title}</b>\n` +
     `━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-    `👤 <b>User:</b> ${escapeHtml(customerName)}\n` +
+    `${identity.summaryLine}\n` +
+    `👤 <b>Username:</b> <code>${escapeHtml(identity.usernameTag)}</code>\n` +
     (user.email ? `📧 <b>Email:</b> <code>${escapeHtml(user.email)}</code>\n` : '') +
-    (user.username ? `📱 <b>Username:</b> <code>@${escapeHtml(user.username)}</code>\n` : '') +
     (user.telegram_id ? `🆔 <b>Telegram ID:</b> <code>${escapeHtml(user.telegram_id)}</code>\n` : '') +
     `🔑 <b>Auth Method:</b> ${escapeHtml(method)}\n` +
     `🛡️ <b>Roles:</b> <code>[${escapeHtml(roleBadges)}]</code>\n` +
@@ -486,14 +553,14 @@ export async function notifyUserAuth({ user, method = 'Google OAuth', isNewUser 
 // 6. INVENTORY RESTOCKED & LOW STOCK ALERTS
 // ============================================================================
 export async function notifyStockAdded({ product, count = 1, stockType = 'code', adminUser = null }) {
-  const adminName = adminUser?.email || adminUser?.username || 'Store Admin';
+  const adminIdentity = formatCustomerIdentity(adminUser);
   const message =
     `📦 <b>INVENTORY RESTOCKED</b>\n` +
     `━━━━━━━━━━━━━━━━━━━━━━━━\n` +
     `🎮 <b>Product:</b> <b>${escapeHtml(product?.name || 'Digital Item')}</b>\n` +
     `➕ <b>Added Count:</b> <b>+${count} item(s)</b>\n` +
     `🏷️ <b>Stock Format:</b> <code>${escapeHtml(stockType)}</code>\n` +
-    `👤 <b>Restocked By:</b> ${escapeHtml(adminName)}\n` +
+    `👤 <b>Restocked By (Admin Username):</b> <b>${escapeHtml(adminIdentity.usernameTag)}</b>\n` +
     `━━━━━━━━━━━━━━━━━━━━━━━━\n` +
     `⏱ <i>${getPhnomPenhTime()} (Phnom Penh)</i>`;
 
@@ -527,7 +594,7 @@ export async function notifyLowStock({ product, remainingCount = 0 }) {
 // 7. ADMIN ACTIONS & GENERAL ALERTS
 // ============================================================================
 export async function notifyAdminAction({ action, target, details = {}, adminUser = null }) {
-  const adminName = adminUser?.email || adminUser?.username || 'Store Admin';
+  const adminIdentity = formatCustomerIdentity(adminUser);
   const detailsHtml = Object.entries(details)
     .map(([k, v]) => `• <b>${escapeHtml(k)}:</b> ${escapeHtml(String(v))}`)
     .join('\n');
@@ -536,7 +603,7 @@ export async function notifyAdminAction({ action, target, details = {}, adminUse
     `🛠️ <b>STORE ADMIN ACTION: ${escapeHtml(action)}</b>\n` +
     `━━━━━━━━━━━━━━━━━━━━━━━━\n` +
     `🎯 <b>Target:</b> ${escapeHtml(target)}\n` +
-    `👤 <b>Admin:</b> ${escapeHtml(adminName)}\n` +
+    `👤 <b>Admin Username:</b> <b>${escapeHtml(adminIdentity.usernameTag)}</b>\n` +
     (detailsHtml ? `${detailsHtml}\n` : '') +
     `━━━━━━━━━━━━━━━━━━━━━━━━\n` +
     `⏱ <i>${getPhnomPenhTime()} (Phnom Penh)</i>`;
@@ -626,6 +693,14 @@ export async function notifyBalanceTopUp(telegramId, amount, newBalance) {
 // ============================================================================
 export async function testTelegramSystem() {
   const time = getPhnomPenhTime();
+  const sampleUser = {
+    username: 'dara_customer',
+    first_name: 'Dara',
+    last_name: 'Customer',
+    email: 'dara@example.com'
+  };
+  const identity = formatCustomerIdentity(sampleUser);
+
   const message =
     `🚀 <b>MAISER STORE: TELEGRAM NOTIFICATION SYSTEM LIVE</b>\n` +
     `━━━━━━━━━━━━━━━━━━━━━━━━\n` +
@@ -633,10 +708,11 @@ export async function testTelegramSystem() {
     `🤖 <b>Telegram Bot:</b> @${ENV.TELEGRAM_BOT_USERNAME || 'Maiser_report_bot'}\n` +
     `👥 <b>Group / Channel ID:</b> <code>${ENV.TELEGRAM_REPORT_CHANNEL_ID || 'Configured'}</code>\n` +
     `👑 <b>Admin Chat ID:</b> <code>${ENV.TELEGRAM_ADMIN_CHAT_ID || 'Configured'}</code>\n` +
+    `👤 <b>Username System:</b> ACTIVE (Displays <code>${identity.usernameTag}</code> for all actions)\n` +
     `🌐 <b>Store Frontend:</b> ${ENV.FRONTEND_URL}\n` +
     `━━━━━━━━━━━━━━━━━━━━━━━━\n` +
     `⏱ <i>Test executed at ${time} (Phnom Penh)</i>\n` +
-    `🎉 <i>Notifications are successfully linked to all website transactions!</i>`;
+    `🎉 <i>Usernames are prominently reported across all store events!</i>`;
 
   const replyMarkup = buildStoreButtons();
   const results = await broadcastToTelegram(message, { replyMarkup });
@@ -649,6 +725,7 @@ export async function testTelegramSystem() {
       botUsername: ENV.TELEGRAM_BOT_USERNAME,
       adminChatId: ENV.TELEGRAM_ADMIN_CHAT_ID,
       reportChannelId: ENV.TELEGRAM_REPORT_CHANNEL_ID,
+      usernameFormat: identity.usernameTag,
       timestamp: time
     }
   };
