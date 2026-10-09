@@ -84,9 +84,9 @@ export const authService = {
   },
 
   /**
-   * Google OAuth / Sign-In Authentication for Admin Dashboard
+   * Google OAuth / Sign-In Authentication for Customers & Admin Dashboard
    */
-  async authenticateGoogle({ credential, email, name, picture, sub, accessToken }) {
+  async authenticateGoogle({ credential, email, name, picture, sub, accessToken, isAdminRequired = false }) {
     let googleUser = {
       email: email || '',
       name: name || '',
@@ -149,13 +149,18 @@ export const authService = {
     }
 
     const normalizedEmail = (googleUser.email || '').trim().toLowerCase();
+    if (!normalizedEmail) {
+      throw new Error('Email is required for Google authentication.');
+    }
+
     const isAuthorizedAdmin = Boolean(
       normalizedEmail &&
       ENV.ADMIN_EMAILS &&
       ENV.ADMIN_EMAILS.includes(normalizedEmail)
     );
 
-    if (!isAuthorizedAdmin) {
+    // If explicitly requiring admin access (e.g. from /admin login page)
+    if (isAdminRequired && !isAuthorizedAdmin) {
       throw new Error(`UNAUTHORIZED: Email "${googleUser.email}" is not authorized for Admin access.`);
     }
 
@@ -164,7 +169,7 @@ export const authService = {
       name: googleUser.name,
       picture: googleUser.picture,
       googleId: googleUser.sub,
-      forceAdmin: true
+      forceAdmin: isAuthorizedAdmin
     });
 
     if (user.status === 'banned') {
@@ -178,14 +183,82 @@ export const authService = {
         userId: user.id,
         telegramId: user.telegram_id,
         email: user.email,
-        roles: user.roles || ['SUPER_ADMIN', 'ADMIN', 'USER']
+        roles: user.roles || (isAuthorizedAdmin ? ['SUPER_ADMIN', 'ADMIN', 'USER'] : ['USER'])
       },
       ENV.JWT_SECRET,
       { expiresIn: ENV.JWT_EXPIRES_IN }
     );
 
-    logger.info(`Google Admin authenticated successfully: ${user.email || user.first_name} (${user.id})`);
+    logger.info(`Google user authenticated successfully: ${user.email || user.first_name} (${user.id}) [Roles: ${(user.roles || []).join(',')}]`);
 
     return { token, user };
+  },
+
+  /**
+   * Determine redirect URI for Google OAuth callback
+   */
+  getGoogleRedirectUri(req = null) {
+    if (req) {
+      const proto = req.headers['x-forwarded-proto'] || req.protocol || 'http';
+      const host = req.headers['x-forwarded-host'] || req.get('host');
+      if (host) {
+        return `${proto}://${host}/api/auth/google/callback`;
+      }
+    }
+    const backendUrl = (ENV.BACKEND_URL || 'http://localhost:5001').replace(/\/+$/, '');
+    return `${backendUrl}/api/auth/google/callback`;
+  },
+
+  /**
+   * Generate Google OAuth consent URL for GET /api/auth/google
+   */
+  getGoogleOAuthUrl(state = '', req = null) {
+    if (!ENV.GOOGLE_CLIENT_ID) {
+      throw new Error('Google OAuth Client ID is not configured.');
+    }
+    const redirectUri = this.getGoogleRedirectUri(req);
+    const params = new URLSearchParams({
+      client_id: ENV.GOOGLE_CLIENT_ID,
+      redirect_uri: redirectUri,
+      response_type: 'code',
+      scope: 'openid email profile',
+      access_type: 'offline',
+      prompt: 'select_account',
+      state: state || ''
+    });
+    return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+  },
+
+  /**
+   * Exchange code from Google OAuth callback for tokens and authenticate
+   */
+  async handleGoogleOAuthCallback(code, req = null, isAdminRequired = false) {
+    if (!code) {
+      throw new Error('Authorization code is required from Google callback.');
+    }
+    const redirectUri = this.getGoogleRedirectUri(req);
+
+    const tokenRes = await axios.post(
+      'https://oauth2.googleapis.com/token',
+      new URLSearchParams({
+        code,
+        client_id: ENV.GOOGLE_CLIENT_ID,
+        client_secret: ENV.GOOGLE_CLIENT_SECRET,
+        redirect_uri: redirectUri,
+        grant_type: 'authorization_code'
+      }).toString(),
+      {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        timeout: 10000
+      }
+    );
+
+    const { id_token, access_token } = tokenRes.data;
+
+    return this.authenticateGoogle({
+      credential: id_token,
+      accessToken: access_token,
+      isAdminRequired
+    });
   }
 };

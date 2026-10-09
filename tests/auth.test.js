@@ -47,5 +47,25 @@ describe('Authentication & Telegram Verification Tests', () => {
     expect(res.body.data.token).toBeDefined();
     expect(res.body.data.user.email).toBe('customer.test@gmail.com');
     expect(res.body.data.user.first_name).toBe('Alex Johnson');
+    expect(res.body.data.user.roles).toContain('USER');
+  });
+
+  it('should generate Google OAuth URL on GET /api/auth/google with json=true', async () => {
+    const res = await request(app)
+      .get('/api/auth/google?json=true&returnTo=/wallet');
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.url).toContain('accounts.google.com/o/oauth2/v2/auth');
+    expect(res.body.data.url).toContain('client_id=');
+  });
+
+  it('should redirect to Google OAuth on browser GET /api/auth/google', async () => {
+    const res = await request(app)
+      .get('/api/auth/google?returnTo=/profile');
+
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toContain('accounts.google.com/o/oauth2/v2/auth');
   });
 });
+

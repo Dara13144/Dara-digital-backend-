@@ -67,6 +67,8 @@ router.post('/telegram/webhook', async (req, res) => {
 // 2. Authentication
 // ============================================================================
 router.post('/telegram/auth', authLimiter, authController.telegramAuth);
+router.get('/auth/google', authController.googleOAuthRedirect);
+router.get('/auth/google/callback', authController.googleOAuthCallback);
 router.post('/auth/google', authLimiter, authController.googleAuth);
 router.post('/auth/mock-login', authLimiter, authController.mockLogin);
 
