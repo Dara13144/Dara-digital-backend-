@@ -69,9 +69,13 @@ export async function startBotRunner() {
         }
       } catch (err) {
         if (!isPolling) break;
-        // In case of conflict (e.g. another instance started) or network timeout, wait and retry
-        logger.debug('Telegram polling tick:', err.message);
-        await new Promise((resolve) => setTimeout(resolve, 3000));
+        if (err.response?.status === 409) {
+          logger.debug('Telegram polling instance conflict (409: another runner active). Retrying in 10s...');
+          await new Promise((resolve) => setTimeout(resolve, 10000));
+        } else {
+          logger.debug(`Telegram polling tick: ${err.message}`);
+          await new Promise((resolve) => setTimeout(resolve, 3000));
+        }
       }
     }
   })().catch((err) => {
