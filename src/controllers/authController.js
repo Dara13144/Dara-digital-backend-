@@ -104,7 +104,7 @@ export const authController = {
       }
     }
 
-    const frontendBase = (ENV.FRONTEND_URL || 'http://localhost:5173').replace(/\/+$/, '');
+    const frontendBase = (ENV.FRONTEND_URL || 'http://localhost:4304').replace(/\/+$/, '');
 
     if (oauthError) {
       logger.warn(`Google OAuth callback error from Google: ${oauthError}`);

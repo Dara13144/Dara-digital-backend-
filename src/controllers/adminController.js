@@ -10,6 +10,7 @@ import { walletRepo } from '../repositories/walletRepo.js';
 import { paymentService } from '../services/paymentService.js';
 import { successResponse, errorResponse } from '../utils/apiResponse.js';
 import { ERROR_CODES } from '../constants/errorCodes.js';
+import { notifyStockAdded, notifyAdminAction, testTelegramSystem } from '../integrations/telegram/notifier.js';
 
 export const adminController = {
   // --------------------------------------------------------------------------
@@ -54,6 +55,19 @@ export const adminController = {
         metadata: { name: product.name, price: product.price },
         req
       });
+
+      try {
+        await notifyAdminAction({
+          action: 'CREATE_PRODUCT',
+          target: product.name,
+          details: {
+            Price: `$${Number(product.price).toFixed(2)} USD`,
+            StockType: product.stock_type || 'code'
+          },
+          adminUser: req.user
+        });
+      } catch (e) {}
+
       return successResponse(res, product, 'Product created successfully', 201);
     } catch (err) {
       return errorResponse(res, ERROR_CODES.BAD_REQUEST, err.message, 400);
@@ -134,6 +148,12 @@ export const adminController = {
         metadata: { productId, stockType },
         req
       });
+
+      try {
+        const product = await productRepo.findById(productId);
+        await notifyStockAdded({ product, count: 1, stockType, adminUser: req.user });
+      } catch (e) {}
+
       return successResponse(res, item, 'Stock item added successfully', 201);
     } catch (err) {
       return errorResponse(res, ERROR_CODES.BAD_REQUEST, err.message, 400);
@@ -152,6 +172,12 @@ export const adminController = {
         metadata: { inserted: result.inserted, duplicates: result.duplicates },
         req
       });
+
+      try {
+        const product = await productRepo.findById(productId);
+        await notifyStockAdded({ product, count: result.inserted, stockType, adminUser: req.user });
+      } catch (e) {}
+
       return successResponse(res, result, `Successfully added ${result.inserted} stock items.`);
     } catch (err) {
       return errorResponse(res, ERROR_CODES.BAD_REQUEST, err.message, 400);
@@ -318,6 +344,20 @@ export const adminController = {
         req
       });
 
+      try {
+        const targetUser = await userRepo.findById(userId);
+        await notifyAdminAction({
+          action: 'ADJUST_USER_BALANCE',
+          target: targetUser?.email || (targetUser?.username ? `@${targetUser.username}` : `User ${userId}`),
+          details: {
+            Type: type,
+            Amount: `$${Math.abs(amount).toFixed(2)} USD`,
+            Reason: description || 'Admin manual balance adjustment'
+          },
+          adminUser: req.user
+        });
+      } catch (e) {}
+
       return successResponse(res, tx, 'Balance adjusted successfully');
     } catch (err) {
       return errorResponse(res, ERROR_CODES.BAD_REQUEST, err.message, 400);
@@ -426,6 +466,15 @@ export const adminController = {
         limit: parseInt(limit, 10)
       });
       return successResponse(res, logs, 'Admin audit logs retrieved');
+    } catch (err) {
+      return errorResponse(res, ERROR_CODES.INTERNAL_SERVER_ERROR, err.message, 500);
+    }
+  },
+
+  async testTelegram(req, res) {
+    try {
+      const result = await testTelegramSystem();
+      return successResponse(res, result, 'Telegram system test notification sent successfully');
     } catch (err) {
       return errorResponse(res, ERROR_CODES.INTERNAL_SERVER_ERROR, err.message, 500);
     }

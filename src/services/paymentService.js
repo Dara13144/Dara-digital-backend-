@@ -6,7 +6,16 @@ import { userRepo } from '../repositories/userRepo.js';
 import { couponRepo } from '../repositories/couponRepo.js';
 import { abaClient } from '../integrations/aba/paywayClient.js';
 import { cutluyClient } from '../integrations/cutluy/cutluyClient.js';
-import { notifyOrderDelivered, notifyPaymentFailed, notifyBalanceTopUp, notifyAdmin, notifyPaymentCompleted, notifyWalletTopUpCompleted } from '../integrations/telegram/notifier.js';
+import { 
+  notifyOrderDelivered, 
+  notifyPaymentFailed, 
+  notifyBalanceTopUp, 
+  notifyAdmin, 
+  notifyPaymentCompleted, 
+  notifyWalletTopUpCompleted,
+  notifyWalletTopUpInitiated,
+  notifyLowStock
+} from '../integrations/telegram/notifier.js';
 import { ORDER_STATUS, PAYMENT_STATUS, WALLET_TX_TYPE } from '../constants/states.js';
 import { logger } from '../config/logger.js';
 
@@ -175,6 +184,18 @@ export const paymentService = {
       expiresAt: cutluyRes.expires_at
     });
 
+    // Broadcast wallet top-up initiation to Telegram Bot & Group
+    try {
+      await notifyWalletTopUpInitiated({
+        user,
+        amount: numAmount,
+        method: 'ABA KHQR (CutLuy)',
+        payment
+      });
+    } catch (notifErr) {
+      logger.warn(`Failed to broadcast top-up init notification: ${notifErr.message}`);
+    }
+
     return {
       paymentId: payment.id,
       cutluyId: cutluyRes.id,
@@ -334,6 +355,16 @@ export const paymentService = {
     } else if (status === 'expired' || status === 'failed') {
       const newStatus = status === 'expired' ? PAYMENT_STATUS.EXPIRED : PAYMENT_STATUS.FAILED;
       await paymentRepo.updatePaymentStatus(payment.id, newStatus, { callbackPayload: event });
+      if (payment.order_id) {
+        await orderRepo.updateOrderStatus(payment.order_id, ORDER_STATUS.FAILED, `Payment ${newStatus} on CutLuy KHQR`);
+        try {
+          const order = await orderRepo.findById(payment.order_id);
+          const user = await userRepo.findById(order?.user_id);
+          await notifyPaymentFailed({ order, reason: `CutLuy ${newStatus}`, user, paymentMethod: 'CutLuy KHQR' });
+        } catch (e) {
+          logger.debug(`CutLuy failure notification error: ${e.message}`);
+        }
+      }
       return { success: true, status: newStatus };
     }
 
@@ -380,10 +411,13 @@ export const paymentService = {
       await paymentRepo.updatePaymentStatus(payment.id, newStatus, { callbackPayload: payload });
       await orderRepo.updateOrderStatus(payment.order_id, ORDER_STATUS.FAILED, `Payment ${newStatus} on ABA PayWay`);
 
-      const order = await orderRepo.findById(payment.order_id);
-      const user = await userRepo.findById(order.user_id);
-      await notifyPaymentFailed(user?.telegram_id, order, `Payment ${newStatus} by gateway.`);
-
+      try {
+        const order = await orderRepo.findById(payment.order_id);
+        const user = await userRepo.findById(order?.user_id);
+        await notifyPaymentFailed({ order, reason: `Payment ${newStatus} on ABA PayWay`, user, paymentMethod: 'ABA PayWay' });
+      } catch (e) {
+        logger.debug(`ABA failure notification error: ${e.message}`);
+      }
       return { success: false, status: newStatus };
     }
   },
@@ -515,6 +549,24 @@ export const paymentService = {
         user,
         paymentMethod: order.payment_method || 'ABA PayWay / KHQR'
       });
+
+      // Check for low/out-of-stock items and alert Telegram bot & group
+      try {
+        for (const item of order.items || []) {
+          const prodId = item.product_id || item.id;
+          if (prodId) {
+            const remaining = await stockRepo.getAvailableCount(prodId);
+            if (remaining <= 3) {
+              await notifyLowStock({
+                product: { id: prodId, name: item.product_name || item.name },
+                remainingCount: remaining
+              });
+            }
+          }
+        }
+      } catch (stockErr) {
+        logger.debug(`Low stock check warning: ${stockErr.message}`);
+      }
 
       const completedOrder = await orderRepo.findById(order.id);
       return {

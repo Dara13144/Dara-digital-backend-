@@ -3,8 +3,10 @@ import { orderRepo } from '../repositories/orderRepo.js';
 import { stockRepo } from '../repositories/stockRepo.js';
 import { couponService } from './couponService.js';
 import { adminRepo } from '../repositories/adminRepo.js';
+import { userRepo } from '../repositories/userRepo.js';
 import { ORDER_STATUS } from '../constants/states.js';
 import { logger } from '../config/logger.js';
+import { notifyOrderCreated } from '../integrations/telegram/notifier.js';
 
 export const orderService = {
   /**
@@ -118,6 +120,20 @@ export const orderService = {
     });
 
     logger.info(`Order #${order.order_number} created for User ${userId}. Total: $${order.total_amount}`);
+
+    // Broadcast new order creation to Telegram Bot & Group
+    try {
+      const user = await userRepo.findById(userId);
+      await notifyOrderCreated({
+        order,
+        user,
+        items: calculated.items,
+        paymentMethod
+      });
+    } catch (notifErr) {
+      logger.warn(`Failed to broadcast order created notification: ${notifErr.message}`);
+    }
+
     return order;
   },
 

@@ -5,6 +5,7 @@ import { userRepo } from '../repositories/userRepo.js';
 import { verifyTelegramInitData } from '../integrations/telegram/initDataVerifier.js';
 import { logger } from '../config/logger.js';
 import { walletRepo } from '../repositories/walletRepo.js';
+import { notifyUserAuth } from '../integrations/telegram/notifier.js';
 
 export const authService = {
   /**
@@ -38,6 +39,12 @@ export const authService = {
     );
 
     logger.info(`User authenticated successfully: @${user.username || user.telegram_id} (${user.id})`);
+
+    try {
+      await notifyUserAuth({ user, method: 'Telegram WebApp' });
+    } catch (e) {
+      logger.debug(`User auth notification error: ${e.message}`);
+    }
 
     return {
       token,
@@ -190,6 +197,12 @@ export const authService = {
     );
 
     logger.info(`Google user authenticated successfully: ${user.email || user.first_name} (${user.id}) [Roles: ${(user.roles || []).join(',')}]`);
+
+    try {
+      await notifyUserAuth({ user, method: 'Google OAuth' });
+    } catch (e) {
+      logger.debug(`Google auth notification error: ${e.message}`);
+    }
 
     return { token, user };
   },

@@ -180,5 +180,6 @@ router.delete('/admin/coupons/:id', adminAuth, adminController.deleteCoupon);
 router.get('/admin/settings', adminAuth, adminController.getSettings);
 router.put('/admin/settings', superAdminAuth, adminController.updateSettings);
 router.get('/admin/logs', adminAuth, adminController.getLogs);
+router.post('/admin/telegram/test', adminAuth, adminController.testTelegram);
 
 export default router;

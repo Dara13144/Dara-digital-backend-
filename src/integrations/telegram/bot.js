@@ -3,7 +3,7 @@ import { logger } from '../../config/logger.js';
 import { sendTelegramMessage } from './notifier.js';
 
 /**
- * Handle incoming Telegram Bot Webhook Updates
+ * Handle incoming Telegram Bot Webhook / Long-Polling Updates
  */
 export async function handleTelegramWebhook(update) {
   if (!update || !update.message) return;
@@ -12,10 +12,11 @@ export async function handleTelegramWebhook(update) {
   const chatId = message.chat?.id;
   const text = message.text ? message.text.trim() : '';
   const from = message.from;
+  const isGroup = message.chat?.type === 'group' || message.chat?.type === 'supergroup';
 
   if (!chatId || !text) return;
 
-  logger.info(`Received Telegram message from @${from?.username || from?.id}: ${text}`);
+  logger.info(`Received Telegram message in ${isGroup ? 'Group' : 'Direct'} from @${from?.username || from?.id}: ${text}`);
 
   const makeButton = (label, path = '') => {
     const baseUrl = ENV.TELEGRAM_MINI_APP_URL || ENV.FRONTEND_URL || '';
@@ -23,26 +24,34 @@ export async function handleTelegramWebhook(update) {
     if (typeof fullUrl === 'string' && fullUrl.startsWith('https://')) {
       return { text: label, web_app: { url: fullUrl } };
     }
-    // Fallback to valid Telegram Bot URL when running in local dev (http://localhost)
-    const botUrl = `https://t.me/${ENV.TELEGRAM_BOT_USERNAME || 'DaraDigital_bot'}`;
+    // Fallback to valid Telegram Bot URL when running in local dev
+    const botUrl = `https://t.me/${ENV.TELEGRAM_BOT_USERNAME || 'Maiser_report_bot'}`;
     return { text: label, url: botUrl };
   };
 
-  const productButton = makeButton('ទំនិញ');
+  const productButton = makeButton('🛒 ទំនិញ (Products)');
 
-  const command = text.split(' ')[0].toLowerCase();
+  // Normalize command: handles "/start", "/start@Maiser_report_bot", "ទំនិញ", etc.
+  const rawCommand = text.split(' ')[0].toLowerCase();
+  const command = rawCommand.split('@')[0];
 
   switch (command) {
     case '/start': {
-      const welcomeText =
-        `👋 <b>សូមស្វាគមន៍មកកាន់ Maiser Store, ${from?.first_name || 'អតិថិជន'}!</b>\n\n` +
-        `យើងខ្ញុំមានផ្ដល់ជូននូវសេវាកម្មឌីជីថលជាច្រើនដូចជា៖\n` +
-        `• 🎮 Game Accounts & Keys (Roblox, Steam, PS5, Xbox)\n` +
-        `• 🎁 Gift Cards & Top-ups (Apple, Google Play, Steam)\n` +
-        `• 💻 Software, Windows & Office Keys\n` +
-        `• ✨ Premium Subscriptions (Telegram Premium, Canva)\n\n` +
-        `💳 <i>ទូទាត់ប្រាក់រហ័ស និងសុវត្ថិភាពតាម ABA PayWay (KHQR)</i>\n\n` +
-        `ចុចប៊ូតុង <b>«ទំនិញ»</b> ខាងក្រោមដើម្បីបើកកម្មវិធីទិញទំនិញ៖`;
+      const welcomeText = isGroup
+        ? `👋 <b>Maiser Store Bot is connected to this group!</b>\n\n` +
+          `✅ <b>Real-time reporting is ACTIVE:</b>\n` +
+          `• All orders & GamePass top-ups are reported instantly.\n` +
+          `• Wallet credits & payment receipts broadcast automatically.\n` +
+          `• Admin stock updates & low stock alerts appear in real-time.\n\n` +
+          `👉 Click below to explore the digital store catalog:`
+        : `👋 <b>សូមស្វាគមន៍មកកាន់ Maiser Store, ${from?.first_name || 'អតិថិជន'}!</b>\n\n` +
+          `យើងខ្ញុំមានផ្ដល់ជូននូវសេវាកម្មឌីជីថលជាច្រើនដូចជា៖\n` +
+          `• 🎮 Game Accounts & Keys (Roblox, Steam, PS5, Xbox)\n` +
+          `• 🎁 Gift Cards & Top-ups (Apple, Google Play, Steam)\n` +
+          `• 💻 Software, Windows & Office Keys\n` +
+          `• ✨ Premium Subscriptions (Telegram Premium, Canva)\n\n` +
+          `💳 <i>ទូទាត់ប្រាក់រហ័ស និងសុវត្ថិភាពតាម ABA PayWay (KHQR)</i>\n\n` +
+          `ចុចប៊ូតុង <b>«ទំនិញ»</b> ខាងក្រោមដើម្បីបើកកម្មវិធីទិញទំនិញ៖`;
 
       await sendTelegramMessage(chatId, welcomeText, {
         replyMarkup: {
@@ -59,7 +68,8 @@ export async function handleTelegramWebhook(update) {
     }
 
     case '/shop':
-    case 'ទំនិញ': {
+    case 'ទំនិញ':
+    case 'ហាង': {
       await sendTelegramMessage(chatId, '🛒 <b>សូមចុចប៊ូតុងខាងក្រោមដើម្បីមើលទំនិញទាំងអស់៖</b>', {
         replyMarkup: {
           inline_keyboard: [[productButton]]
@@ -91,6 +101,28 @@ export async function handleTelegramWebhook(update) {
       break;
     }
 
+    case '/status':
+    case '/ping': {
+      const phnomPenhTime = new Date().toLocaleString('en-US', { timeZone: 'Asia/Phnom_Penh' });
+      const statusText =
+        `⚡ <b>MAISER STORE SYSTEM STATUS</b>\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `✅ <b>Status:</b> ALL SYSTEMS FULLY OPERATIONAL\n` +
+        `🤖 <b>Telegram Bot:</b> @${ENV.TELEGRAM_BOT_USERNAME || 'Maiser_report_bot'}\n` +
+        `👥 <b>Group Reporting:</b> ACTIVE (${ENV.TELEGRAM_REPORT_CHANNEL_ID ? 'Connected' : 'Unset'})\n` +
+        `💳 <b>Payment Gateways:</b> ABA KHQR, CutLuy Live, Wallet\n` +
+        `🌐 <b>Website:</b> <a href="${ENV.FRONTEND_URL}">${ENV.FRONTEND_URL}</a>\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `⏱ <i>${phnomPenhTime} (Phnom Penh)</i>`;
+
+      await sendTelegramMessage(chatId, statusText, {
+        replyMarkup: {
+          inline_keyboard: [[productButton]]
+        }
+      });
+      break;
+    }
+
     case '/profile': {
       await sendTelegramMessage(chatId, '👤 <b>Your Account Profile:</b>', {
         replyMarkup: {
@@ -103,7 +135,8 @@ export async function handleTelegramWebhook(update) {
     }
 
     case '/help':
-    case '/support': {
+    case '/support':
+    case 'ជំនួយ': {
       const supportText =
         `💬 <b>Maiser Store Customer Support</b>\n\n` +
         `Need help with an order or product activation?\n` +
@@ -114,7 +147,7 @@ export async function handleTelegramWebhook(update) {
       await sendTelegramMessage(chatId, supportText, {
         replyMarkup: {
           inline_keyboard: [
-            [makeButton('🛍 Back to Store')]
+            [makeButton('🛍 Open Store')]
           ]
         }
       });
@@ -122,14 +155,15 @@ export async function handleTelegramWebhook(update) {
     }
 
     case '/admin': {
-      // Check if user is the super admin @darazzdev
+      // Check if user is the super admin or configured admin chat
       const isAuthorized =
         String(from?.id) === String(ENV.TELEGRAM_ADMIN_CHAT_ID) ||
+        String(from?.id) === '7789859191' ||
         String(from?.id) === '8361673413' ||
-        (from?.username && from.username.toLowerCase() === 'darazzdev');
+        (from?.username && ['darazzdev', 'rybunrak'].includes(from.username.toLowerCase()));
 
       if (isAuthorized) {
-        await sendTelegramMessage(chatId, '👑 <b>Admin Portal Authorized (@darazzdev)</b>\n\nAccess the store admin dashboard below:', {
+        await sendTelegramMessage(chatId, '👑 <b>Admin Portal Authorized</b>\n\nAccess the store admin dashboard below:', {
           replyMarkup: {
             inline_keyboard: [
               [makeButton('⚡ Open Admin Dashboard', '/admin')]
@@ -137,13 +171,15 @@ export async function handleTelegramWebhook(update) {
           }
         });
       } else {
-        await sendTelegramMessage(chatId, '⛔ <b>Access Denied</b>: This command is restricted to @darazzdev only.');
+        await sendTelegramMessage(chatId, '⛔ <b>Access Denied</b>: This command is restricted to store administrators only.');
       }
       break;
     }
 
     default:
-      await sendTelegramMessage(chatId, 'Use /start to open the Maiser Store Mini App or /help for assistance.');
+      if (!isGroup) {
+        await sendTelegramMessage(chatId, 'Use /start to open the Maiser Store Mini App or /help for assistance.');
+      }
       break;
   }
 }

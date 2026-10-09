@@ -12,7 +12,7 @@ dotenv.config();
 export const ENV = {
   NODE_ENV: process.env.NODE_ENV || 'development',
   PORT: parseInt(process.env.PORT || '5000', 10),
-  FRONTEND_URL: process.env.FRONTEND_URL || 'http://localhost:5173',
+  FRONTEND_URL: process.env.FRONTEND_URL || 'http://localhost:4304',
   BACKEND_URL: process.env.BACKEND_URL || 'http://localhost:5000',
 
   // Security & JWT
@@ -41,7 +41,7 @@ export const ENV = {
   TELEGRAM_BOT_USERNAME: process.env.TELEGRAM_BOT_USERNAME || 'Maiser_report_bot',
   TELEGRAM_ADMIN_CHAT_ID: process.env.TELEGRAM_ADMIN_CHAT_ID || '7789859191',
   TELEGRAM_REPORT_CHANNEL_ID: process.env.TELEGRAM_REPORT_CHANNEL_ID || '-1003823688631',
-  TELEGRAM_MINI_APP_URL: process.env.TELEGRAM_MINI_APP_URL || 'http://localhost:5173',
+  TELEGRAM_MINI_APP_URL: process.env.TELEGRAM_MINI_APP_URL || 'http://localhost:4304',
 
   // ABA PayWay
   ABA: {
@@ -49,8 +49,8 @@ export const ENV = {
     MERCHANT_ID: process.env.ABA_MERCHANT_ID || 'ec000000',
     API_KEY: process.env.ABA_API_KEY || '',
     SECRET: process.env.ABA_SECRET || '',
-    RETURN_URL: process.env.ABA_RETURN_URL || 'http://localhost:5173/orders',
-    CANCEL_URL: process.env.ABA_CANCEL_URL || 'http://localhost:5173/checkout',
+    RETURN_URL: process.env.ABA_RETURN_URL || 'http://localhost:4304/orders',
+    CANCEL_URL: process.env.ABA_CANCEL_URL || 'http://localhost:4304/checkout',
     CALLBACK_URL: process.env.ABA_CALLBACK_URL || 'http://localhost:5000/api/payments/aba/callback',
     SANDBOX_BASE_URL: 'https://checkout-sandbox.payway.com.kh/api/payment-gateway/v1/payments/purchase',
     PRODUCTION_BASE_URL: 'https://checkout.payway.com.kh/api/payment-gateway/v1/payments/purchase',
