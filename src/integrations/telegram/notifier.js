@@ -375,10 +375,11 @@ export async function notifyPaymentCompleted({
   } else {
     const headerTitle = isTopUpOrder
       ? `⚡ <b>USER TOP-UP SUCCESSFUL!</b>`
-      : `🎉 <b>Payment Done & Order Delivered!</b>`;
+      : `🎉 <b>ORDER PAYMENT SUCCESSFUL!</b>`;
 
     message =
-      `${headerTitle}\n\n` +
+      `${headerTitle}\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━\n` +
       `🧾 <b>${isTopUpOrder ? 'Top-Up Order ID' : 'Order ID'}:</b> <code>#${escapeHtml(order?.order_number || payment?.transaction_id)}</code>\n` +
       `${identity.summaryLine}\n` +
       (identity.email ? `📧 <b>Email:</b> <code>${escapeHtml(identity.email)}</code>\n` : '') +
@@ -387,10 +388,12 @@ export async function notifyPaymentCompleted({
       `💰 <b>Total Paid:</b> <b>$${totalAmount} ${escapeHtml(currency)}</b> (≈ ${priceInKhr} ៛)\n` +
       `⚡ <b>Payment Method:</b> ${escapeHtml(paymentMethod)}\n` +
       `⚡ <b>Delivery Speed:</b> Instant Automated Delivery\n` +
-      `\n🛍️ <b>${isTopUpOrder ? 'Top-Up Package' : 'Items'}:</b>\n${itemsText}\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `🛍️ <b>${isTopUpOrder ? 'Top-Up Package' : 'Purchased Items'}:</b>\n${itemsText}\n` +
       (deliveryDetailsText ? `\n🔐 <b>Instant Delivery (Tap to Copy):</b>${deliveryDetailsText}\n` : '') +
-      `\n⏱ <i>${getPhnomPenhTime()} (Phnom Penh)</i>\n` +
-      `🤖 <i>Delivered automatically by @Maiser_report_bot</i>`;
+      `━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `⏱ <i>${getPhnomPenhTime()} (Phnom Penh)</i>\n` +
+      `🤖 <i>Auto-reported by @Maiser_report_bot</i>`;
   }
 
   const replyMarkup = buildStoreButtons(order?.id, profileUrl);
@@ -486,15 +489,17 @@ export async function notifyWalletTopUpCompleted({
   const identity = formatCustomerIdentity(user);
 
   const message =
-    `💰 <b>USER TOP-UP SUCCESSFUL (WALLET)!</b>\n\n` +
+    `💰 <b>USER TOP-UP SUCCESSFUL (WALLET)!</b>\n` +
+    `━━━━━━━━━━━━━━━━━━━━━━━━\n` +
     `${identity.summaryLine}\n` +
     (identity.email ? `📧 <b>Email:</b> <code>${escapeHtml(identity.email)}</code>\n` : '') +
     (identity.telegramId ? `🆔 <b>Telegram ID:</b> <code>${escapeHtml(identity.telegramId)}</code>\n` : '') +
     `➕ <b>Top-Up Amount:</b> <b>+$${Number(amount).toFixed(2)} USD</b>\n` +
     `💳 <b>New Wallet Balance:</b> <b>$${Number(newBalance).toFixed(2)} USD</b>\n` +
-    `⚡ <b>Payment Method:</b> ABA KHQR (Bakong)\n\n` +
+    `⚡ <b>Payment Method:</b> ABA KHQR (Bakong)\n` +
+    `━━━━━━━━━━━━━━━━━━━━━━━━\n` +
     `⏱ <i>${getPhnomPenhTime()} (Phnom Penh)</i>\n` +
-    `🤖 <i>Processed automatically by @Maiser_report_bot</i>`;
+    `🤖 <i>Auto-reported by @Maiser_report_bot</i>`;
 
   // Broadcast to Group and Bot
   await broadcastToTelegram(message);
