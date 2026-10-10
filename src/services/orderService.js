@@ -33,7 +33,18 @@ export const orderService = {
       const qty = Math.max(1, parseInt(item.quantity || 1, 10));
       const availableStock = await stockRepo.getAvailableCount(product.id);
 
-      if (['code', 'account', 'link', 'text', 'file'].includes(product.stock_type)) {
+      const isGamepassOrRobux =
+        product.stock_type === 'manual' ||
+        product.category?.slug === 'gamepass' ||
+        product.category?.slug === 'topup' ||
+        product.category?.slug === 'robux' ||
+        (product.name || '').toLowerCase().includes('gamepass') ||
+        (product.name || '').toLowerCase().includes('top-up') ||
+        (product.name || '').toLowerCase().includes('topup') ||
+        (product.name || '').toLowerCase().includes('robux') ||
+        (product.name || '').toLowerCase().includes('r$');
+
+      if (['code', 'account', 'link', 'text', 'file'].includes(product.stock_type) && !isGamepassOrRobux) {
         if (availableStock < qty) {
           throw new Error(
             `INSUFFICIENT_STOCK: Only ${availableStock} item(s) available for "${product.name}". You requested ${qty}.`
@@ -51,12 +62,12 @@ export const orderService = {
       validatedItems.push({
         product_id: product.id,
         product_name: product.name,
-        stock_type: product.stock_type,
+        stock_type: isGamepassOrRobux ? 'manual' : product.stock_type,
         unit_price: unitPrice,
         quantity: qty,
         total_price: itemTotal,
         image_url: product.images?.[0] || null,
-        available_stock: availableStock
+        available_stock: isGamepassOrRobux ? (product.stock_quantity || 9999) : availableStock
       });
     }
 

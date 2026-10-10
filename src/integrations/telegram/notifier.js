@@ -574,6 +574,27 @@ export async function notifyStockAdded({ product, count = 1, stockType = 'code',
 }
 
 export async function notifyLowStock({ product, remainingCount = 0 }) {
+  const nameLower = (product?.name || '').toLowerCase();
+  const catSlug = (product?.category?.slug || '').toLowerCase();
+  const isGamepassOrRobux =
+    product?.stock_type === 'manual' ||
+    catSlug === 'gamepass' ||
+    catSlug === 'topup' ||
+    catSlug === 'robux' ||
+    nameLower.includes('gamepass') ||
+    nameLower.includes('permanent') ||
+    nameLower.includes('top-up') ||
+    nameLower.includes('topup') ||
+    nameLower.includes('robux') ||
+    nameLower.includes('r$') ||
+    nameLower.includes('fruit') ||
+    nameLower.includes('blox');
+
+  // GamePass, Robux & manual products are delivered on-demand and NEVER run out of stock
+  if (isGamepassOrRobux) {
+    return false;
+  }
+
   const dedupKey = `low_stock_${product?.id}_${remainingCount}`;
   if (isNotificationAlreadySent(dedupKey)) return false;
   markNotificationSent(dedupKey);

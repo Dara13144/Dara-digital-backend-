@@ -4,6 +4,22 @@ import { memoryStore } from './storeMemory.js';
 import { slugify } from '../utils/slugify.js';
 import { fastCache } from '../utils/cache.js';
 
+export const isGamepassOrManualProduct = (p, cat = null) => {
+  const catSlug = (cat?.slug || p?.category?.slug || '').toLowerCase();
+  const nameLower = (p?.name || '').toLowerCase();
+  return (
+    p?.stock_type === 'manual' ||
+    catSlug === 'gamepass' ||
+    catSlug === 'topup' ||
+    catSlug === 'robux' ||
+    nameLower.includes('gamepass') ||
+    nameLower.includes('top-up') ||
+    nameLower.includes('topup') ||
+    nameLower.includes('robux') ||
+    nameLower.includes('r$')
+  );
+};
+
 export const productRepo = {
   async getProducts({
     categoryId,
@@ -33,11 +49,15 @@ export const productRepo = {
               'name_km', c.name_km,
               'slug', c.slug
             ) as category,
-            COALESCE((
-              SELECT count(*)::int 
-              FROM stock_items s 
-              WHERE s.product_id = p.id AND s.status = 'available'
-            ), 0) as stock_quantity
+            CASE 
+              WHEN p.stock_type = 'manual' OR c.slug IN ('gamepass', 'topup') OR LOWER(p.name) LIKE '%gamepass%' OR LOWER(p.name) LIKE '%robux%' OR LOWER(p.name) LIKE '%top-up%'
+              THEN CASE WHEN COALESCE(p.stock_quantity, 0) > 0 THEN p.stock_quantity ELSE 9999 END
+              ELSE COALESCE((
+                SELECT count(*)::int 
+                FROM stock_items s 
+                WHERE s.product_id = p.id AND s.status = 'available'
+              ), 0)
+            END as stock_quantity
           FROM products p
           LEFT JOIN categories c ON p.category_id = c.id
           WHERE 1=1
@@ -187,10 +207,11 @@ export const productRepo = {
         (s) => s.product_id === p.id && s.status === 'available'
       ).length;
       const category = memoryStore.categories.find((c) => c.id === p.category_id);
+      const isGp = isGamepassOrManualProduct(p, category);
 
       return {
         ...p,
-        stock_quantity: availableCount,
+        stock_quantity: isGp ? ((p.stock_quantity && p.stock_quantity > 0) ? p.stock_quantity : 9999) : availableCount,
         category: category ? { id: category.id, name: category.name, name_km: category.name_km, slug: category.slug } : null
       };
     });
@@ -230,7 +251,11 @@ export const productRepo = {
           `SELECT 
             p.*,
             json_build_object('id', c.id, 'name', c.name, 'name_km', c.name_km, 'slug', c.slug) as category,
-            COALESCE((SELECT count(*)::int FROM stock_items s WHERE s.product_id = p.id AND s.status = 'available'), 0) as stock_quantity
+            CASE 
+              WHEN p.stock_type = 'manual' OR c.slug IN ('gamepass', 'topup') OR LOWER(p.name) LIKE '%gamepass%' OR LOWER(p.name) LIKE '%robux%' OR LOWER(p.name) LIKE '%top-up%'
+              THEN CASE WHEN COALESCE(p.stock_quantity, 0) > 0 THEN p.stock_quantity ELSE 9999 END
+              ELSE COALESCE((SELECT count(*)::int FROM stock_items s WHERE s.product_id = p.id AND s.status = 'available'), 0)
+            END as stock_quantity
           FROM products p
           LEFT JOIN categories c ON p.category_id = c.id
           WHERE p.id = $1 LIMIT 1`,
@@ -248,9 +273,11 @@ export const productRepo = {
       (s) => s.product_id === p.id && s.status === 'available'
     ).length;
     const category = memoryStore.categories.find((c) => c.id === p.category_id);
+    const isGp = isGamepassOrManualProduct(p, category);
+
     return {
       ...p,
-      stock_quantity: availableCount,
+      stock_quantity: isGp ? ((p.stock_quantity && p.stock_quantity > 0) ? p.stock_quantity : 9999) : availableCount,
       category: category ? { id: category.id, name: category.name, name_km: category.name_km, slug: category.slug } : null
     };
   },
@@ -262,7 +289,11 @@ export const productRepo = {
           `SELECT 
             p.*,
             json_build_object('id', c.id, 'name', c.name, 'name_km', c.name_km, 'slug', c.slug) as category,
-            COALESCE((SELECT count(*)::int FROM stock_items s WHERE s.product_id = p.id AND s.status = 'available'), 0) as stock_quantity
+            CASE 
+              WHEN p.stock_type = 'manual' OR c.slug IN ('gamepass', 'topup') OR LOWER(p.name) LIKE '%gamepass%' OR LOWER(p.name) LIKE '%robux%' OR LOWER(p.name) LIKE '%top-up%'
+              THEN CASE WHEN COALESCE(p.stock_quantity, 0) > 0 THEN p.stock_quantity ELSE 9999 END
+              ELSE COALESCE((SELECT count(*)::int FROM stock_items s WHERE s.product_id = p.id AND s.status = 'available'), 0)
+            END as stock_quantity
           FROM products p
           LEFT JOIN categories c ON p.category_id = c.id
           WHERE p.slug = $1 LIMIT 1`,
@@ -280,9 +311,11 @@ export const productRepo = {
       (s) => s.product_id === p.id && s.status === 'available'
     ).length;
     const category = memoryStore.categories.find((c) => c.id === p.category_id);
+    const isGp = isGamepassOrManualProduct(p, category);
+
     return {
       ...p,
-      stock_quantity: availableCount,
+      stock_quantity: isGp ? ((p.stock_quantity && p.stock_quantity > 0) ? p.stock_quantity : 9999) : availableCount,
       category: category ? { id: category.id, name: category.name, name_km: category.name_km, slug: category.slug } : null
     };
   },

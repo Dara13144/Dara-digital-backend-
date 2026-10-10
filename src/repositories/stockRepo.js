@@ -10,13 +10,49 @@ export const stockRepo = {
    * Get available stock count for a given product
    */
   async getAvailableCount(productId) {
+    if (productId) {
+      const prod = memoryStore.products?.find((p) => p.id === productId);
+      if (prod) {
+        const cat = prod.category_id ? memoryStore.categories?.find((c) => c.id === prod.category_id) : null;
+        const nameLower = (prod.name || '').toLowerCase();
+        const catSlug = (cat?.slug || prod.category?.slug || '').toLowerCase();
+        if (
+          prod.stock_type === 'manual' ||
+          catSlug === 'gamepass' ||
+          catSlug === 'topup' ||
+          catSlug === 'robux' ||
+          nameLower.includes('gamepass') ||
+          nameLower.includes('robux') ||
+          nameLower.includes('top-up') ||
+          nameLower.includes('topup') ||
+          nameLower.includes('r$')
+        ) {
+          return (prod.stock_quantity && prod.stock_quantity > 0) ? prod.stock_quantity : 9999;
+        }
+      }
+    }
+
     if (dbPool) {
       try {
         const { rows } = await dbPool.query(
-          "SELECT count(*)::int as count FROM stock_items WHERE product_id = $1 AND status = 'available'",
+          `SELECT 
+            CASE 
+              WHEN p.stock_type = 'manual' OR c.slug IN ('gamepass', 'topup') OR LOWER(p.name) LIKE '%gamepass%' OR LOWER(p.name) LIKE '%robux%' OR LOWER(p.name) LIKE '%top-up%'
+              THEN CASE WHEN COALESCE(p.stock_quantity, 0) > 0 THEN p.stock_quantity ELSE 9999 END
+              ELSE COALESCE((
+                SELECT count(*)::int 
+                FROM stock_items s 
+                WHERE s.product_id = p.id AND s.status = 'available'
+              ), 0)
+            END as count
+           FROM products p
+           LEFT JOIN categories c ON p.category_id = c.id
+           WHERE p.id = $1`,
           [productId]
         );
-        return rows[0]?.count ?? 0;
+        if (rows[0] && rows[0].count !== undefined) {
+          return rows[0].count;
+        }
       } catch (err) {
         logger.debug('dbPool getAvailableCount error, falling back:', err.message);
       }
@@ -278,7 +314,15 @@ export const stockRepo = {
 
     // Step 1: Check availability & allocate
     for (const item of orderItems) {
-      if (['code', 'account', 'file', 'link', 'text'].includes(item.stock_type)) {
+      const isGamepassOrRobux =
+        item.stock_type === 'manual' ||
+        (item.product_name || '').toLowerCase().includes('gamepass') ||
+        (item.product_name || '').toLowerCase().includes('top-up') ||
+        (item.product_name || '').toLowerCase().includes('topup') ||
+        (item.product_name || '').toLowerCase().includes('robux') ||
+        (item.product_name || '').toLowerCase().includes('r$');
+
+      if (['code', 'account', 'file', 'link', 'text'].includes(item.stock_type) && !isGamepassOrRobux) {
         const availableItems = memoryStore.stock_items.filter(
           (s) => s.product_id === item.product_id && s.status === STOCK_STATUS.AVAILABLE
         );

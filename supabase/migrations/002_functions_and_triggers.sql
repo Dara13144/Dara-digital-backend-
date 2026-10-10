@@ -129,8 +129,22 @@ BEGIN
         v_needed_count := v_item.quantity;
         v_allocated_count := 0;
 
-        -- For code/account/file/link/text stocks that require inventory rows
-        IF v_item.stock_type IN ('code', 'account', 'link', 'text', 'file') THEN
+        -- For code/account/file/link/text stocks that require inventory rows (Gamepass & Robux bypass)
+        IF v_item.stock_type IN ('code', 'account', 'link', 'text', 'file') 
+           AND NOT EXISTS (
+               SELECT 1 FROM products p 
+               LEFT JOIN categories c ON p.category_id = c.id
+               WHERE p.id = v_item.product_id 
+                 AND (
+                     p.stock_type = 'manual' 
+                     OR c.slug IN ('gamepass', 'topup', 'robux') 
+                     OR LOWER(p.name) LIKE '%gamepass%' 
+                     OR LOWER(p.name) LIKE '%robux%' 
+                     OR LOWER(p.name) LIKE '%top-up%'
+                     OR LOWER(p.name) LIKE '%topup%'
+                     OR LOWER(p.name) LIKE '%r$%'
+                 )
+           ) THEN
             -- Select and lock specific available stock rows
             FOR v_stock_record IN 
                 SELECT s.id, s.payload, s.stock_type 

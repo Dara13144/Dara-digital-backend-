@@ -25,6 +25,8 @@ app.use(
 // CORS Configuration
 const allowedOrigins = [
   ENV.FRONTEND_URL,
+  'https://www.maiserstore.shop',
+  'https://maiserstore.shop',
   'https://maiserstore.vercel.app',
   'http://localhost:4304',
   'http://localhost:5173',
@@ -36,7 +38,13 @@ app.use(
   cors({
     origin: (origin, callback) => {
       // Allow requests with no origin (like mobile apps, curl, server-to-server callbacks)
-      if (!origin || allowedOrigins.includes(origin) || origin.endsWith('.telegram.org') || origin.endsWith('.vercel.app')) {
+      if (
+        !origin ||
+        allowedOrigins.includes(origin) ||
+        origin.endsWith('.telegram.org') ||
+        origin.endsWith('.vercel.app') ||
+        origin.endsWith('maiserstore.shop')
+      ) {
         callback(null, true);
       } else {
         callback(null, true); // Permissive in dev for Telegram WebApp variations

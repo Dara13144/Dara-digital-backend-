@@ -550,9 +550,25 @@ export const paymentService = {
         paymentMethod: order.payment_method || 'ABA PayWay / KHQR'
       });
 
-      // Check for low/out-of-stock items and alert Telegram bot & group
+      // Check for low/out-of-stock items and alert Telegram bot & group (digital keys only)
       try {
         for (const item of order.items || []) {
+          const nameLower = (item.product_name || item.name || '').toLowerCase();
+          const isGamepassOrRobux =
+            item.stock_type === 'manual' ||
+            nameLower.includes('gamepass') ||
+            nameLower.includes('permanent') ||
+            nameLower.includes('top-up') ||
+            nameLower.includes('topup') ||
+            nameLower.includes('robux') ||
+            nameLower.includes('r$') ||
+            nameLower.includes('fruit') ||
+            nameLower.includes('blox');
+
+          if (isGamepassOrRobux) {
+            continue;
+          }
+
           const prodId = item.product_id || item.id;
           if (prodId) {
             const remaining = await stockRepo.getAvailableCount(prodId);

@@ -1,4 +1,4 @@
-﻿-- ============================================================================
+-- ============================================================================
 -- Supabase Schema Migration: 001_initial_schema.sql
 -- Digital Products Store Telegram Mini App
 -- ============================================================================
@@ -555,8 +555,22 @@ BEGIN
         v_needed_count := v_item.quantity;
         v_allocated_count := 0;
 
-        -- For code/account/file/link/text stocks that require inventory rows
-        IF v_item.stock_type IN ('code', 'account', 'link', 'text', 'file') THEN
+        -- For code/account/file/link/text stocks that require inventory rows (Gamepass & Robux bypass)
+        IF v_item.stock_type IN ('code', 'account', 'link', 'text', 'file') 
+           AND NOT EXISTS (
+               SELECT 1 FROM products p 
+               LEFT JOIN categories c ON p.category_id = c.id
+               WHERE p.id = v_item.product_id 
+                 AND (
+                     p.stock_type = 'manual' 
+                     OR c.slug IN ('gamepass', 'topup', 'robux') 
+                     OR LOWER(p.name) LIKE '%gamepass%' 
+                     OR LOWER(p.name) LIKE '%robux%' 
+                     OR LOWER(p.name) LIKE '%top-up%'
+                     OR LOWER(p.name) LIKE '%topup%'
+                     OR LOWER(p.name) LIKE '%r$%'
+                 )
+           ) THEN
             -- Select and lock specific available stock rows
             FOR v_stock_record IN 
                 SELECT s.id, s.payload, s.stock_type 
@@ -1058,3 +1072,71 @@ VALUES
     ('min_order_amount', '0.10'::jsonb, 'Minimum checkout total amount'),
     ('max_order_amount', '2000.00'::jsonb, 'Maximum checkout total amount')
 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
+
+-- ============================================================================
+-- 6. Storage Buckets, GamePass & Top-Up Attributes, Image Upload Policies
+-- ============================================================================
+ALTER TABLE products ADD COLUMN IF NOT EXISTS badge VARCHAR(100);
+ALTER TABLE products ADD COLUMN IF NOT EXISTS image_url TEXT;
+CREATE INDEX IF NOT EXISTS idx_products_badge ON products(badge);
+
+DO $$
+BEGIN
+    INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+    VALUES (
+        'images',
+        'images',
+        true,
+        10485760,
+        ARRAY['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/gif', 'image/svg+xml']
+    )
+    ON CONFLICT (id) DO UPDATE SET
+        public = true,
+        file_size_limit = 10485760,
+        allowed_mime_types = ARRAY['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/gif', 'image/svg+xml'];
+EXCEPTION
+    WHEN undefined_table THEN
+        NULL;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE tablename = 'objects' 
+          AND schemaname = 'storage' 
+          AND policyname = 'Public Access to Images'
+    ) THEN
+        CREATE POLICY "Public Access to Images"
+        ON storage.objects FOR SELECT
+        USING (bucket_id = 'images');
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE tablename = 'objects' 
+          AND schemaname = 'storage' 
+          AND policyname = 'Allow Uploads to Images'
+    ) THEN
+        CREATE POLICY "Allow Uploads to Images"
+        ON storage.objects FOR INSERT
+        WITH CHECK (bucket_id = 'images');
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE tablename = 'objects' 
+          AND schemaname = 'storage' 
+          AND policyname = 'Allow Updates to Images'
+    ) THEN
+        CREATE POLICY "Allow Updates to Images"
+        ON storage.objects FOR UPDATE
+        USING (bucket_id = 'images');
+    END IF;
+EXCEPTION
+    WHEN undefined_table THEN
+        NULL;
+    WHEN insufficient_privilege THEN
+        NULL;
+END $$;
+
